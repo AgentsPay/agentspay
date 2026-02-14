@@ -6,7 +6,6 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/agentspay"><img src="https://img.shields.io/npm/v/agentspay.svg" alt="npm" /></a>
-  <a href="https://github.com/AgentsPay/agentspay/actions"><img src="https://img.shields.io/github/actions/workflow/status/AgentsPay/agentspay/ci.yml" alt="CI" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" />
   <img src="https://img.shields.io/badge/BSV-micropayments-yellow.svg" alt="BSV" />
 </p>
@@ -31,6 +30,7 @@ A **marketplace and payment infrastructure** for AI agents to discover, pay for,
 agentspay/
 ├── apps/
 │   ├── api/              # Express API server (port 3100)
+│   │   └── demo/         # Demo scripts
 │   ├── web/              # Next.js marketplace frontend
 │   └── docs/             # Landing page
 ├── packages/
@@ -38,10 +38,9 @@ agentspay/
 │   ├── sdk/              # TypeScript SDK (npm: agentspay)
 │   ├── sdk-python/       # Python SDK (pip: agentspay)
 │   └── config/           # Shared TypeScript config
-├── tests/                # Integration & unit tests
-├── demo/                 # Demo scripts
-├── docker/               # Docker & docker-compose
-└── .github/workflows/    # CI/CD pipelines
+├── turbo.json            # Turborepo pipeline
+├── pnpm-workspace.yaml   # Workspace config
+└── package.json          # Root workspace
 ```
 
 **Powered by:** [Turborepo](https://turbo.build) + [pnpm](https://pnpm.io) workspaces
@@ -65,7 +64,12 @@ git clone https://github.com/AgentsPay/agentspay.git
 cd agentspay
 pnpm install
 pnpm build
-pnpm dev
+
+# Start the API server
+pnpm --filter @agentspay/api dev
+
+# Start the frontend (separate terminal)
+pnpm --filter web dev
 ```
 
 ### TypeScript SDK
@@ -160,22 +164,11 @@ result = client.execute(service.id, wallet.id, {"text": "Hello world"})
 ## Development
 
 ```bash
-pnpm install              # Install all dependencies
-pnpm build                # Build all packages (Turborepo)
-pnpm dev                  # Dev mode (all apps)
-
-# Individual packages
-pnpm --filter @agentspay/api dev    # API server only
-pnpm --filter web dev               # Frontend only
-```
-
-## Docker
-
-```bash
-cd docker
-docker-compose up
-# API: http://localhost:3100
-# Web: http://localhost:3001
+pnpm install                          # Install all dependencies
+pnpm build                            # Build all packages (Turborepo)
+pnpm --filter @agentspay/api dev      # API server
+pnpm --filter web dev                 # Frontend
+pnpm --filter @agentspay/api demo     # Run demo
 ```
 
 ## Architecture
