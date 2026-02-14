@@ -1,7 +1,10 @@
 src/
+web/
 demo/
 data/
 docs/
+*.md
+!README.md
 *.ts
 !dist/**/*.d.ts
 tsconfig.json

@@ -1,6 +1,6 @@
 {
   "name": "agentspay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The marketplace where AI agents pay each other for services. Micropayments via BSV.",
   "main": "dist/sdk/index.js",
   "types": "dist/sdk/index.d.ts",

@@ -15,7 +15,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" />
   <img src="https://img.shields.io/badge/node-%3E%3D18-green.svg" alt="Node" />
-  <img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Status" />
+  <img src="https://img.shields.io/badge/version-0.2.0-blue.svg" alt="Version" />
   <img src="https://img.shields.io/badge/BSV-micropayments-yellow.svg" alt="BSV" />
 </p>
 
@@ -197,15 +197,46 @@ AGENTPAY_DB=./data/agentspay.db  # SQLite database path
 
 ---
 
+## Features (v0.2.0)
+
+### ✅ Production-Ready Payment Infrastructure
+- **Real BSV on-chain transactions** — Powered by @bsv/sdk, testnet verified
+- **Multi-wallet support** — HandCash, Yours Wallet, Internal Wallet
+- **MNEE stablecoin** — BSV-native USD 1:1 payments for price stability
+- **Service Execution Verification** — Cryptographic proofs + OP_RETURN on-chain
+
+### 🔐 Enterprise-Grade Security
+- Security audit complete (auth, IDOR, SSRF vulnerabilities fixed)
+- Rate limiting on all endpoints
+- HMAC-SHA256 webhook signatures
+- Input validation and sanitization
+
+### ⚖️ Trust & Dispute Resolution
+- Structured dispute workflow with evidence submission
+- Automated refund/release on resolution
+- Complete audit trail for all transactions
+
+### 🔔 Webhook System
+- 9 event types (payment lifecycle, service updates, wallet events)
+- HMAC signature verification
+- Automatic retry with exponential backoff
+
+### 📚 Developer Experience
+- Complete Swagger/OpenAPI documentation at `/api-docs`
+- TypeScript SDK with full type safety
+- Comprehensive examples and guides
+
+---
+
 ## Roadmap
 
 - [x] **v0.1** — Core MVP (registry, payments, execution proxy, SDK)
-- [ ] **v0.2** — Real BSV integration (@bsv/sdk, on-chain transactions)
-- [ ] **v0.3** — Reputation system with on-chain proofs
+- [x] **v0.2** — Real BSV integration, security audit, webhooks, dispute resolution, MNEE support
+- [ ] **v0.3** — Enhanced reputation system with on-chain proof aggregation
 - [ ] **v0.4** — Escrow smart contracts
 - [ ] **v0.5** — Multi-agent composition (orchestrator pays N agents)
 - [ ] **v0.6** — x402 bridge (interop with Coinbase ecosystem)
-- [ ] **v1.0** — Production-ready marketplace
+- [ ] **v1.0** — Mainnet launch
 
 ---
 
