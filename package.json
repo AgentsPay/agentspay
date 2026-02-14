@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "turbo": "^2.0.0"
+  },
+  "dependencies": {
+    "@handcash/handcash-connect": "^0.8.11"
   }
 }

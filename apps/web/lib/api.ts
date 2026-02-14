@@ -77,7 +77,7 @@ class AgentPayAPI {
   async connectHandCash(): Promise<{ authUrl: string }> {
     const data = await this.fetch<{ ok: boolean; authUrl: string }>(
       '/api/wallets/connect/handcash',
-      { method: 'POST' }
+      { method: 'GET' }
     )
     return { authUrl: data.authUrl }
   }

@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import { HandCashConnect } from '@handcash/handcash-connect'
 import {
   WalletManager,
   Registry,
@@ -49,6 +50,61 @@ app.post('/api/wallets/connect/internal', (_req, res) => {
     apiKey: wallet.apiKey,
     privateKey: wallet.privateKey,
   })
+})
+
+// HandCash Connect - OAuth redirect
+app.get('/api/wallets/connect/handcash', (_req, res) => {
+  try {
+    // HandCashConnect imported at top
+    const appId = process.env.HANDCASH_APP_ID
+    const appSecret = process.env.HANDCASH_APP_SECRET
+    if (!appId || !appSecret) {
+      return res.status(503).json({ error: 'HandCash Connect not configured. Set HANDCASH_APP_ID and HANDCASH_APP_SECRET.' })
+    }
+    const handcash = new HandCashConnect({ appId, appSecret })
+    const redirectUrl = handcash.getRedirectionUrl()
+    res.json({ ok: true, authUrl: redirectUrl })
+  } catch (err: any) {
+    res.status(500).json({ error: 'HandCash Connect error: ' + err.message })
+  }
+})
+
+// HandCash OAuth callback
+app.get('/api/wallets/connect/handcash/callback', async (req, res) => {
+  try {
+    const { authToken } = req.query
+    if (!authToken) return res.status(400).json({ error: 'Missing authToken' })
+    // HandCashConnect imported at top
+    const appId = process.env.HANDCASH_APP_ID
+    const appSecret = process.env.HANDCASH_APP_SECRET
+    const handcash = new HandCashConnect({ appId, appSecret })
+    const account = handcash.getAccountFromAuthToken(authToken as string)
+    const profile = await account.profile.getCurrentProfile()
+    const wallet = wallets.create()
+    res.json({
+      ok: true,
+      wallet: { id: wallet.id, publicKey: wallet.publicKey, address: wallet.address, provider: 'handcash', externalId: profile.publicProfile.handle, createdAt: wallet.createdAt },
+      apiKey: wallet.apiKey,
+    })
+  } catch (err: any) {
+    res.status(500).json({ error: 'HandCash callback error: ' + err.message })
+  }
+})
+
+// Yours Wallet connect
+app.post('/api/wallets/connect/yours', (req, res) => {
+  const { publicKey } = req.body
+  if (!publicKey) return res.status(400).json({ error: 'Public key required from Yours Wallet extension' })
+  try {
+    const wallet = wallets.create()
+    res.json({
+      ok: true,
+      wallet: { id: wallet.id, publicKey, address: wallet.address, provider: 'yours', createdAt: wallet.createdAt },
+      apiKey: wallet.apiKey,
+    })
+  } catch (err: any) {
+    res.status(500).json({ error: 'Yours Wallet connect error: ' + err.message })
+  }
 })
 
 app.post('/api/wallets', (_req, res) => {
