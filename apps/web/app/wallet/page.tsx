@@ -362,22 +362,22 @@ export default function WalletPage() {
                     <div className="bg-[var(--bg)] rounded-lg p-4">
                       <div className="text-xs text-gray-500 mb-1">BSV</div>
                       <div className="text-2xl font-bold text-green-500">
-                        {formatSats(wallet.balances.BSV)} <span className="text-sm text-gray-500">sats</span>
+                        {formatSats(wallet.balances.BSV.amount)} <span className="text-sm text-gray-500">sats</span>
                       </div>
                       {bsvPrice && (
                         <div className="text-sm text-gray-400 mt-1">
-                          ≈ {satsToUsd(wallet.balances.BSV?.amount ?? wallet.balances.BSV, bsvPrice)} USD
+                          ≈ {satsToUsd(wallet.balances.BSV.amount, bsvPrice)} USD
                         </div>
                       )}
                     </div>
                     <div className="bg-[var(--bg)] rounded-lg p-4">
                       <div className="text-xs text-gray-500 mb-1">MNEE</div>
                       <div className="text-2xl font-bold text-blue-500">
-                        {formatCurrency(wallet.balances.MNEE, 'MNEE')}
+                        {formatCurrency(wallet.balances.MNEE.amount, 'MNEE')}
                       </div>
                       {bsvPrice && (
                         <div className="text-sm text-gray-400 mt-1">
-                          {formatMneeWithBsv(wallet.balances.MNEE?.amount ?? wallet.balances.MNEE, bsvPrice)}
+                          {formatMneeWithBsv(wallet.balances.MNEE.amount, bsvPrice)}
                         </div>
                       )}
                     </div>

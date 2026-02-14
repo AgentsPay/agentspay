@@ -228,11 +228,11 @@ export default function DashboardPage() {
           <div className="card">
             <div className="text-xs sm:text-sm text-gray-400 mb-1">💰 Revenue</div>
             <div className="text-xl sm:text-2xl font-bold text-green-500">
-              {wallet?.balances ? formatSats(wallet.balances.BSV?.amount ?? wallet.balances.BSV) : '0'} <span className="text-sm text-gray-500">sats</span>
+              {wallet?.balances ? formatSats(wallet.balances.BSV.amount) : '0'} <span className="text-sm text-gray-500">sats</span>
             </div>
             {wallet?.balances && bsvPrice && (
               <div className="text-xs text-gray-400 mt-1">
-                ≈ {satsToUsd(wallet.balances.BSV?.amount ?? wallet.balances.BSV, bsvPrice)}
+                ≈ {satsToUsd(wallet.balances.BSV.amount, bsvPrice)}
               </div>
             )}
           </div>

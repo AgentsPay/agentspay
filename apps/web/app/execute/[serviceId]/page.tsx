@@ -189,9 +189,12 @@ export default function ExecuteServicePage() {
 
   if (!service) return null
 
+  const bsvBalance = selectedWallet?.balances?.BSV?.amount ?? 0
+  const mneeBalance = selectedWallet?.balances?.MNEE?.amount ?? 0
+
   const canExecute = selectedWallet && inputValid && (
-    (service.currency === 'BSV' && selectedWallet.balances?.BSV! >= service.price) ||
-    (service.currency === 'MNEE' && selectedWallet.balances?.MNEE! >= service.price)
+    (service.currency === 'BSV' && bsvBalance >= service.price) ||
+    (service.currency === 'MNEE' && mneeBalance >= service.price)
   )
 
   return (
@@ -290,15 +293,15 @@ export default function ExecuteServicePage() {
                     <WalletBadge address={selectedWallet.address} balance={selectedWallet.balance} />
                   </div>
                   
-                  {service.currency === 'BSV' && selectedWallet.balances.BSV < service.price && (
+                  {service.currency === 'BSV' && bsvBalance < service.price && (
                     <div className="text-sm text-red-500">
-                      Insufficient BSV (need {formatSats(service.price - selectedWallet.balances.BSV)} more sats)
+                      Insufficient BSV (need {formatSats(service.price - bsvBalance)} more sats)
                     </div>
                   )}
                   
-                  {service.currency === 'MNEE' && selectedWallet.balances.MNEE < service.price && (
+                  {service.currency === 'MNEE' && mneeBalance < service.price && (
                     <div className="text-sm text-red-500">
-                      Insufficient MNEE (need {formatPrice(service.price - selectedWallet.balances.MNEE, 'MNEE')} more)
+                      Insufficient MNEE (need {formatPrice(service.price - mneeBalance, 'MNEE')} more)
                     </div>
                   )}
                 </div>

@@ -9,8 +9,14 @@ export interface Wallet {
   createdAt: string
   balance?: number
   balances?: {
-    BSV: number
-    MNEE: number
+    BSV: {
+      amount: number
+      formatted: string
+    }
+    MNEE: {
+      amount: number
+      formatted: string
+    }
   }
 }
 
