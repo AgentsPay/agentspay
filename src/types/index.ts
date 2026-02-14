@@ -20,6 +20,8 @@ export interface Service {
   inputSchema?: object   // JSON schema del input esperado
   outputSchema?: object  // JSON schema del output
   active: boolean
+  timeout: number        // max execution time in seconds (default 30)
+  disputeWindow: number  // dispute window in minutes (default 30)
   createdAt: string
   updatedAt: string
 }
@@ -32,6 +34,7 @@ export interface Payment {
   amount: number         // satoshis
   platformFee: number    // satoshis (2%)
   status: 'pending' | 'escrowed' | 'released' | 'disputed' | 'refunded'
+  disputeStatus?: string // 'disputed' | 'no_dispute' | resolution status
   txId?: string          // BSV transaction id
   createdAt: string
   completedAt?: string
@@ -68,6 +71,20 @@ export interface ServiceQuery {
   minRating?: number
   limit?: number
   offset?: number
+}
+
+export interface Dispute {
+  id: string
+  paymentId: string
+  buyerWalletId: string
+  providerWalletId: string
+  reason: string
+  evidence?: string
+  status: 'open' | 'under_review' | 'resolved_refund' | 'resolved_release' | 'resolved_split' | 'expired'
+  resolution?: 'refund' | 'release' | 'split'
+  splitPercent?: number
+  resolvedAt?: string
+  createdAt: string
 }
 
 export const PLATFORM_FEE_RATE = 0.02 // 2%

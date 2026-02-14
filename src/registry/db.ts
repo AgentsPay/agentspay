@@ -38,6 +38,8 @@ function initSchema(db: Database.Database) {
       inputSchema TEXT,
       outputSchema TEXT,
       active INTEGER NOT NULL DEFAULT 1,
+      timeout INTEGER NOT NULL DEFAULT 30,
+      disputeWindow INTEGER NOT NULL DEFAULT 30,
       createdAt TEXT NOT NULL DEFAULT (datetime('now')),
       updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -50,11 +52,26 @@ function initSchema(db: Database.Database) {
       amount INTEGER NOT NULL,
       platformFee INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
+      disputeStatus TEXT,
       txId TEXT,
       escrowTxId TEXT,
       releaseTxId TEXT,
       createdAt TEXT NOT NULL DEFAULT (datetime('now')),
       completedAt TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS disputes (
+      id TEXT PRIMARY KEY,
+      paymentId TEXT NOT NULL UNIQUE REFERENCES payments(id),
+      buyerWalletId TEXT NOT NULL REFERENCES wallets(id),
+      providerWalletId TEXT NOT NULL REFERENCES wallets(id),
+      reason TEXT NOT NULL,
+      evidence TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      resolution TEXT,
+      splitPercent INTEGER,
+      resolvedAt TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS utxos (
@@ -85,8 +102,46 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
     CREATE INDEX IF NOT EXISTS idx_payments_buyer ON payments(buyerWalletId);
     CREATE INDEX IF NOT EXISTS idx_payments_seller ON payments(sellerWalletId);
+    CREATE INDEX IF NOT EXISTS idx_payments_dispute_status ON payments(disputeStatus);
+    CREATE INDEX IF NOT EXISTS idx_disputes_payment ON disputes(paymentId);
+    CREATE INDEX IF NOT EXISTS idx_disputes_buyer ON disputes(buyerWalletId);
+    CREATE INDEX IF NOT EXISTS idx_disputes_provider ON disputes(providerWalletId);
+    CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status);
     CREATE INDEX IF NOT EXISTS idx_utxos_wallet ON utxos(walletId);
     CREATE INDEX IF NOT EXISTS idx_utxos_spent ON utxos(spent);
     CREATE INDEX IF NOT EXISTS idx_utxos_txid_vout ON utxos(txid, vout);
+
+    CREATE TABLE IF NOT EXISTS webhooks (
+      id TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      events TEXT NOT NULL,
+      secret TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      ownerId TEXT REFERENCES wallets(id),
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id TEXT PRIMARY KEY,
+      webhookId TEXT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+      eventType TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      signature TEXT NOT NULL,
+      idempotencyKey TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      lastAttemptAt TEXT,
+      nextRetryAt TEXT,
+      responseStatus INTEGER,
+      responseBody TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      completedAt TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_webhooks_active ON webhooks(active);
+    CREATE INDEX IF NOT EXISTS idx_webhooks_owner ON webhooks(ownerId);
+    CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook ON webhook_deliveries(webhookId);
+    CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries(status);
+    CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry ON webhook_deliveries(status, nextRetryAt);
   `)
 }

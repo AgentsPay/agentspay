@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid'
 import { getDb } from './db'
 import type { Service, ServiceQuery, ReputationScore } from '../types'
+import { webhookDelivery } from '../webhooks/delivery'
 
 export class Registry {
   // Register a new service
@@ -9,18 +10,27 @@ export class Registry {
     const id = uuid()
     const now = new Date().toISOString()
 
+    const timeout = service.timeout || 30
+    const disputeWindow = service.disputeWindow || 30
+
     db.prepare(`
-      INSERT INTO services (id, agentId, name, description, category, price, endpoint, method, inputSchema, outputSchema, active, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      INSERT INTO services (id, agentId, name, description, category, price, endpoint, method, inputSchema, outputSchema, active, timeout, disputeWindow, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
     `).run(
       id, service.agentId, service.name, service.description, service.category,
       service.price, service.endpoint, service.method,
       service.inputSchema ? JSON.stringify(service.inputSchema) : null,
       service.outputSchema ? JSON.stringify(service.outputSchema) : null,
+      timeout, disputeWindow,
       now, now
     )
 
-    return { ...service, id, active: true, createdAt: now, updatedAt: now }
+    const registeredService = { ...service, id, active: true, timeout, disputeWindow, createdAt: now, updatedAt: now }
+    
+    // Trigger webhook
+    webhookDelivery.trigger('service.registered', registeredService).catch(console.error)
+
+    return registeredService
   }
 
   // Search/discover services
@@ -63,7 +73,7 @@ export class Registry {
   }
 
   // Update service
-  update(id: string, updates: Partial<Pick<Service, 'name' | 'description' | 'price' | 'endpoint' | 'active'>>): Service | null {
+  update(id: string, updates: Partial<Pick<Service, 'name' | 'description' | 'price' | 'endpoint' | 'active' | 'timeout' | 'disputeWindow'>>): Service | null {
     const db = getDb()
     const fields: string[] = ['updatedAt = ?']
     const params: any[] = [new Date().toISOString()]

@@ -6,6 +6,7 @@ import { WalletManager } from '../wallet/wallet'
 import { buildTransaction, privateKeyFromWif, getTxId, generatePrivateKey, deriveAddress } from '../bsv/crypto'
 import { broadcastTx } from '../bsv/whatsonchain'
 import { config } from '../config'
+import { webhookDelivery } from '../webhooks/delivery'
 
 /**
  * Payment Engine with Real BSV Transactions
@@ -44,12 +45,18 @@ export class PaymentEngine {
         VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
       `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, `demo-${id.slice(0,8)}`, now)
 
-      return {
+      const payment: Payment = {
         id, serviceId, buyerWalletId, sellerWalletId,
         amount, platformFee, status: 'escrowed',
         txId: `demo-${id.slice(0,8)}`,
         createdAt: now,
       }
+
+      // Trigger webhooks
+      webhookDelivery.trigger('payment.created', payment).catch(console.error)
+      webhookDelivery.trigger('payment.escrowed', payment).catch(console.error)
+
+      return payment
     }
 
     // On-chain mode
@@ -77,7 +84,13 @@ export class PaymentEngine {
         VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
       `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, txId, now)
 
-      return { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status: 'escrowed', txId, createdAt: now }
+      const payment: Payment = { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status: 'escrowed', txId, createdAt: now }
+
+      // Trigger webhooks
+      webhookDelivery.trigger('payment.created', payment).catch(console.error)
+      webhookDelivery.trigger('payment.escrowed', payment).catch(console.error)
+
+      return payment
     } catch (error: any) {
       throw new Error(`Failed to create escrow transaction: ${error.message}`)
     }
@@ -100,7 +113,11 @@ export class PaymentEngine {
     if (config.demoMode) {
       db.prepare(`UPDATE payments SET status = 'released', releaseTxId = ?, completedAt = ? WHERE id = ?`)
         .run(`demo-release-${paymentId.slice(0,8)}`, now, paymentId)
-      return this.getById(paymentId)
+      const updatedPayment = this.getById(paymentId)
+      if (updatedPayment) {
+        webhookDelivery.trigger('payment.completed', updatedPayment).catch(console.error)
+      }
+      return updatedPayment
     }
 
     const sellerWallet = this.wallets.getById(payment.sellerWalletId)
@@ -118,7 +135,11 @@ export class PaymentEngine {
 
       db.prepare(`UPDATE payments SET status = 'released', releaseTxId = ?, completedAt = ? WHERE id = ?`)
         .run(releaseTxId, now, paymentId)
-      return this.getById(paymentId)
+      const updatedPayment = this.getById(paymentId)
+      if (updatedPayment) {
+        webhookDelivery.trigger('payment.completed', updatedPayment).catch(console.error)
+      }
+      return updatedPayment
     } catch (error: any) {
       console.error('Failed to release payment:', error)
       throw new Error(`Failed to release payment: ${error.message}`)
@@ -142,7 +163,12 @@ export class PaymentEngine {
     if (config.demoMode) {
       db.prepare(`UPDATE payments SET status = 'refunded', releaseTxId = ?, completedAt = ? WHERE id = ?`)
         .run(`demo-refund-${paymentId.slice(0,8)}`, now, paymentId)
-      return this.getById(paymentId)
+      const updatedPayment = this.getById(paymentId)
+      if (updatedPayment) {
+        webhookDelivery.trigger('payment.failed', updatedPayment).catch(console.error)
+        webhookDelivery.trigger('payment.refunded', updatedPayment).catch(console.error)
+      }
+      return updatedPayment
     }
 
     const buyerWallet = this.wallets.getById(payment.buyerWalletId)
@@ -159,7 +185,12 @@ export class PaymentEngine {
 
       db.prepare(`UPDATE payments SET status = 'refunded', releaseTxId = ?, completedAt = ? WHERE id = ?`)
         .run(refundTxId, now, paymentId)
-      return this.getById(paymentId)
+      const updatedPayment = this.getById(paymentId)
+      if (updatedPayment) {
+        webhookDelivery.trigger('payment.failed', updatedPayment).catch(console.error)
+        webhookDelivery.trigger('payment.refunded', updatedPayment).catch(console.error)
+      }
+      return updatedPayment
     } catch (error: any) {
       console.error('Failed to refund payment:', error)
       throw new Error(`Failed to refund payment: ${error.message}`)
@@ -178,7 +209,11 @@ export class PaymentEngine {
     `).run(paymentId)
 
     if (result.changes === 0) return null
-    return this.getById(paymentId)
+    const payment = this.getById(paymentId)
+    if (payment) {
+      webhookDelivery.trigger('dispute.opened', payment).catch(console.error)
+    }
+    return payment
   }
 
   /**
