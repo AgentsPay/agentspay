@@ -13,13 +13,14 @@ export class Registry {
     const timeout = service.timeout || 30
     const disputeWindow = service.disputeWindow || 30
     const currency = service.currency || 'BSV'
+    const method = service.method || 'POST'
 
     db.prepare(`
       INSERT INTO services (id, agentId, name, description, category, price, currency, endpoint, method, inputSchema, outputSchema, active, timeout, disputeWindow, createdAt, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
     `).run(
       id, service.agentId, service.name, service.description, service.category,
-      service.price, currency, service.endpoint, service.method,
+      service.price, currency, service.endpoint, method,
       service.inputSchema ? JSON.stringify(service.inputSchema) : null,
       service.outputSchema ? JSON.stringify(service.outputSchema) : null,
       timeout, disputeWindow,

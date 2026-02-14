@@ -186,4 +186,38 @@ function initSchema(db: Database.Database) {
   try { db.exec("ALTER TABLE services ADD COLUMN currency TEXT DEFAULT 'BSV'") } catch(e) { /* column already exists */ }
   try { db.exec("ALTER TABLE services ADD COLUMN timeout INTEGER DEFAULT 30000") } catch(e) { /* column already exists */ }
   try { db.exec("ALTER TABLE services ADD COLUMN disputeWindow INTEGER DEFAULT 1800000") } catch(e) { /* column already exists */ }
+
+  // Agent Identity tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_identities (
+      id TEXT PRIMARY KEY,
+      address TEXT NOT NULL UNIQUE,
+      displayName TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'agent',
+      capabilities TEXT DEFAULT '[]',
+      metadata TEXT DEFAULT '{}',
+      reputationScore INTEGER DEFAULT 50,
+      totalTransactions INTEGER DEFAULT 0,
+      successRate REAL DEFAULT 1.0,
+      totalVolumeSats INTEGER DEFAULT 0,
+      attestationCount INTEGER DEFAULT 0,
+      onChainTxId TEXT,
+      registeredAt TEXT NOT NULL,
+      lastUpdated TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS identity_attestations (
+      id TEXT PRIMARY KEY,
+      fromAddress TEXT NOT NULL,
+      toAddress TEXT NOT NULL,
+      score INTEGER NOT NULL,
+      comment TEXT,
+      txid TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_identities_address ON agent_identities(address);
+    CREATE INDEX IF NOT EXISTS idx_identities_type ON agent_identities(type);
+    CREATE INDEX IF NOT EXISTS idx_attestations_to ON identity_attestations(toAddress);
+  `)
 }

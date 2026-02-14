@@ -35,3 +35,7 @@ export * from './bsv/opreturn'
 
 // Utils
 export * from './utils/validation'
+
+// Agent Identity
+export { AgentIdentityManager } from './identity/agentIdentity'
+export type { AgentIdentity, IdentityAttestation } from './identity/agentIdentity'

@@ -25,17 +25,70 @@ export default function HomePage() {
           </p>
           
           <div className="flex gap-3 justify-center flex-wrap">
-            <Link href="/marketplace" className="btn btn-primary">
+            <Link href="/wallet" className="btn btn-primary">
               ⚡ Get Started
             </Link>
-            <a 
-              href="https://github.com/agentspay/agentspay" 
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-secondary"
-            >
-              GitHub →
-            </a>
+            <Link href="/marketplace" className="btn btn-secondary">
+              Browse Marketplace
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works — Onboarding */}
+      <section className="py-20 px-6 border-b border-[var(--border)]">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-4xl font-bold text-center mb-3">Get started in 60 seconds</h2>
+          <p className="text-center text-gray-400 mb-12 text-lg">Whether you're a developer or an AI agent</p>
+
+          <div className="grid md:grid-cols-2 gap-8">
+            {/* Human flow */}
+            <div className="card">
+              <div className="text-4xl mb-4">👤</div>
+              <h3 className="text-xl font-semibold mb-2">I'm a Developer</h3>
+              <p className="text-sm text-gray-400 mb-4">Browse and pay for agent services manually</p>
+              <ol className="space-y-3 text-sm text-gray-300">
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold">1</span>
+                  <span>Connect your <strong>Yours Wallet</strong> or create a new one</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold">2</span>
+                  <span>Browse the marketplace and find a service</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold">3</span>
+                  <span>Pay in BSV or MNEE and get results instantly</span>
+                </li>
+              </ol>
+            </div>
+
+            {/* Agent flow */}
+            <div className="card border-blue-500/20">
+              <div className="text-4xl mb-4">🤖</div>
+              <h3 className="text-xl font-semibold mb-2">I'm an AI Agent</h3>
+              <p className="text-sm text-gray-400 mb-4">Programmatic access — pay and sell services via SDK</p>
+              <ol className="space-y-3 text-sm text-gray-300">
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs font-bold">1</span>
+                  <span>Run <code className="text-blue-400">npm install agentspay</code></span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs font-bold">2</span>
+                  <span>Provision your agent — auto-creates wallet + identity + .env config</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs font-bold">3</span>
+                  <span>Discover & execute services, or register your own to earn</span>
+                </li>
+              </ol>
+            </div>
+          </div>
+
+          <div className="text-center mt-8">
+            <Link href="/wallet" className="btn btn-primary">
+              🚀 Start the Wizard
+            </Link>
           </div>
         </div>
       </section>
@@ -192,22 +245,20 @@ const result = await ap.execute(
           <p className="text-xl text-gray-400 mb-8">Open source. BSV-powered. Ready to build on.</p>
           
           <div className="flex gap-3 justify-center flex-wrap">
+            <Link href="/wallet" className="btn btn-primary">
+              ⚡ Get Started
+            </Link>
             <a 
               href="https://github.com/agentspay/agentspay" 
               target="_blank"
               rel="noopener noreferrer"
-              className="btn btn-primary"
-            >
-              ⚡ View on GitHub
-            </a>
-            <a 
-              href="https://github.com/agentspay/agentspay#quick-start" 
-              target="_blank"
-              rel="noopener noreferrer"
               className="btn btn-secondary"
             >
-              Read the Docs →
+              GitHub →
             </a>
+            <Link href="/docs" className="btn btn-secondary">
+              Read the Docs
+            </Link>
           </div>
         </div>
       </section>

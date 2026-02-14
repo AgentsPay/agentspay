@@ -9,13 +9,15 @@ import { WalletBadge } from '@/components/WalletBadge'
 import { ReputationStars } from '@/components/ReputationStars'
 import { useToast } from '@/lib/useToast'
 import { ToastContainer } from '@/components/Toast'
-import { formatSats, formatDate, getExplorerUrl, formatPrice } from '@/lib/utils'
+import { formatSats, formatDate, getExplorerUrl, formatPrice, satsToUsd, formatMneeWithBsv } from '@/lib/utils'
+import { useBsvPrice } from '@/lib/useBsvPrice'
 import type { Service, Wallet, ExecuteResult, Reputation, Receipt } from '@/lib/types'
 
 export default function ExecuteServicePage() {
   const params = useParams()
   const serviceId = params.serviceId as string
 
+  const bsvPrice = useBsvPrice()
   const [service, setService] = useState<Service | null>(null)
   const [reputation, setReputation] = useState<Reputation | null>(null)
   const [wallets, setWallets] = useState<string[]>([])
@@ -224,6 +226,12 @@ export default function ExecuteServicePage() {
                   formatPrice(service.price, service.currency)
                 )}
               </div>
+              {service.currency === 'BSV' && bsvPrice && (
+                <div className="text-sm text-gray-400">≈{satsToUsd(service.price, bsvPrice)} USD</div>
+              )}
+              {service.currency === 'MNEE' && bsvPrice && (
+                <div className="text-sm text-gray-400">{formatMneeWithBsv(service.price, bsvPrice)}</div>
+              )}
             </div>
           </div>
 

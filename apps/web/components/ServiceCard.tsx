@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { Service } from '@/lib/types'
-import { formatSats, formatPrice } from '@/lib/utils'
+import { formatSats, formatPrice, satsToUsd, formatMneeWithBsv } from '@/lib/utils'
+import { useBsvPrice } from '@/lib/useBsvPrice'
 import { ReputationStars } from './ReputationStars'
 
 interface ServiceCardProps {
@@ -9,6 +10,7 @@ interface ServiceCardProps {
 }
 
 export function ServiceCard({ service, reputation }: ServiceCardProps) {
+  const bsvPrice = useBsvPrice()
   const getCurrencyBadge = (currency: string) => {
     const colors = {
       BSV: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
@@ -40,6 +42,12 @@ export function ServiceCard({ service, reputation }: ServiceCardProps) {
             </div>
             {service.currency === 'BSV' && (
               <div className="text-xs text-gray-500">sats</div>
+            )}
+            {service.currency === 'BSV' && bsvPrice && (
+              <div className="text-xs text-gray-400">≈{satsToUsd(service.price, bsvPrice)}</div>
+            )}
+            {service.currency === 'MNEE' && bsvPrice && (
+              <div className="text-xs text-gray-400">{formatMneeWithBsv(service.price, bsvPrice)}</div>
             )}
           </div>
         </div>

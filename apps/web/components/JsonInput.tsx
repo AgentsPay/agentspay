@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 
 interface JsonInputProps {
   value: string
@@ -11,29 +11,31 @@ interface JsonInputProps {
 
 export function JsonInput({ value, onChange, placeholder = '{}', rows = 6 }: JsonInputProps) {
   const [error, setError] = useState<string | null>(null)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
-  useEffect(() => {
-    if (!value.trim()) {
+  const handleChange = useCallback((rawValue: string) => {
+    if (!rawValue.trim()) {
       setError(null)
-      onChange(value, false)
+      onChangeRef.current(rawValue, false)
       return
     }
 
     try {
-      const parsed = JSON.parse(value)
+      const parsed = JSON.parse(rawValue)
       setError(null)
-      onChange(value, true, parsed)
+      onChangeRef.current(rawValue, true, parsed)
     } catch (err: any) {
       setError(err.message)
-      onChange(value, false)
+      onChangeRef.current(rawValue, false)
     }
-  }, [value, onChange])
+  }, [])
 
   return (
     <div>
       <textarea
         value={value}
-        onChange={(e) => onChange(e.target.value, false)}
+        onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
         className={`font-mono text-sm w-full bg-[var(--surface)] border rounded-lg px-4 py-3 text-white focus:outline-none transition-colors ${

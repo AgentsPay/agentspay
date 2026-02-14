@@ -22,6 +22,7 @@ class AgentPayAPI {
   ): Promise<T> {
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
+      credentials: 'include',  // send httpOnly cookies
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
@@ -35,6 +36,10 @@ class AgentPayAPI {
     }
 
     return data
+  }
+
+  async logout(): Promise<void> {
+    await this.fetch('/api/auth/logout', { method: 'POST' })
   }
 
   // ============ WALLETS ============
@@ -99,6 +104,28 @@ class AgentPayAPI {
       { method: 'POST' }
     )
     return { wallet: data.wallet, apiKey: data.apiKey, privateKey: data.privateKey }
+  }
+
+  async provisionAgent(name: string, opts?: { type?: string; capabilities?: string[] }): Promise<{
+    agent: { walletId: string; address: string; apiKey: string; privateKey: string }
+    envConfig: string
+    quickStart: string
+  }> {
+    return this.fetch('/api/agents/provision', {
+      method: 'POST',
+      body: JSON.stringify({ name, ...opts }),
+    })
+  }
+
+  async importWallet(privateKey: string): Promise<Wallet> {
+    const data = await this.fetch<{ ok: boolean; wallet: Wallet; apiKey: string }>(
+      '/api/wallets/connect/import',
+      {
+        method: 'POST',
+        body: JSON.stringify({ privateKey }),
+      }
+    )
+    return data.wallet
   }
 
   async disconnectWallet(id: string): Promise<void> {

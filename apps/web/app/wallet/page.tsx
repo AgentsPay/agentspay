@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { CopyButton } from '@/components/CopyButton'
-import { WalletBadge } from '@/components/WalletBadge'
+import { ConnectWalletModal } from '@/components/ConnectWalletModal'
+import { OnboardingWizard } from '@/components/OnboardingWizard'
 import { useToast } from '@/lib/useToast'
 import { ToastContainer } from '@/components/Toast'
-import { formatSats, formatDate, getExplorerUrl, formatCurrency } from '@/lib/utils'
+import { formatSats, formatDate, getExplorerUrl, formatCurrency, satsToUsd, formatMneeWithBsv } from '@/lib/utils'
+import { useBsvPrice } from '@/lib/useBsvPrice'
 import type { Wallet, Transaction, UTXO } from '@/lib/types'
 
 export default function WalletPage() {
@@ -15,14 +17,17 @@ export default function WalletPage() {
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [utxos, setUtxos] = useState<UTXO[]>([])
-  const [showPrivateKey, setShowPrivateKey] = useState(false)
   const [newWallet, setNewWallet] = useState<Wallet | null>(null)
   const [newApiKey, setNewApiKey] = useState<string | null>(null)
   const [newPrivateKey, setNewPrivateKey] = useState<string | null>(null)
   const [fundAmount, setFundAmount] = useState('10000')
+  const [wizardCreds, setWizardCreds] = useState<{ apiKey?: string; privateKey?: string; walletId?: string; address?: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState<'transactions' | 'utxos'>('transactions')
+  const [showConnectModal, setShowConnectModal] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
+  const bsvPrice = useBsvPrice()
   const { toasts, success, error: showError, dismiss } = useToast()
 
   useEffect(() => {
@@ -54,65 +59,71 @@ export default function WalletPage() {
       setTransactions(txs)
       setUtxos(utxoList)
     } catch (err: any) {
-      showError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleConnectHandCash() {
-    try {
-      setLoading(true)
-      const { authUrl } = await api.connectHandCash()
-      if (authUrl) {
-        window.location.href = authUrl
+      if (err.message?.includes('401') || err.message?.includes('Invalid API key')) {
+        showError('Session expired. Removing stale wallet.')
+        const updated = wallets.filter(w => w !== id)
+        setWallets(updated)
+        localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
+        setSelectedWalletId(updated.length > 0 ? updated[0] : null)
+        setWallet(null)
       } else {
-        showError('HandCash Connect not configured. Set HANDCASH_APP_ID and HANDCASH_APP_SECRET in the API server.')
+        showError(err.message)
       }
-    } catch (err: any) {
-      showError('HandCash Connect not available — configure HANDCASH_APP_ID on the server, or use Internal Wallet.')
     } finally {
       setLoading(false)
     }
   }
 
-  async function handleConnectYours() {
+  async function handleConnect(provider: string, data?: { privateKey?: string }) {
     try {
       setLoading(true)
-      // @ts-ignore - Yours Wallet extension API
-      const yoursWallet = typeof window !== 'undefined' && ((window as any).yours || (window as any).panda)
-      if (!yoursWallet) {
-        showError('Yours Wallet extension not detected. Install it from yours.org, or use Internal Wallet.')
-        return
-      }
-      const pubKey = await yoursWallet.getPublicKey()
-      const w = await api.connectYours(pubKey)
-      const updated = [...wallets, w.id]
-      setWallets(updated)
-      localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
-      setSelectedWalletId(w.id)
-      success('Yours Wallet connected successfully!')
-    } catch (err: any) {
-      showError(err.message || 'Failed to connect Yours Wallet')
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  async function handleConnectInternal() {
-    try {
-      setLoading(true)
-      const { wallet: w, apiKey, privateKey } = await api.connectInternal()
-      const updated = [...wallets, w.id]
-      setWallets(updated)
-      localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
-      setNewWallet(w)
-      setNewApiKey(apiKey)
-      setNewPrivateKey(privateKey)
-      setSelectedWalletId(w.id)
-      success('Internal wallet created successfully!')
+      if (provider === 'internal') {
+        const { wallet: w, apiKey, privateKey } = await api.connectInternal()
+        const updated = [...wallets, w.id]
+        setWallets(updated)
+        localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
+        setNewWallet(w)
+        setNewApiKey(apiKey)
+        setNewPrivateKey(privateKey)
+        setSelectedWalletId(w.id)
+        setShowConnectModal(false)
+        setWizardCreds({ apiKey, privateKey, walletId: w.id, address: w.address })
+        success('Wallet created! Save your credentials below.')
+      } else if (provider === 'handcash') {
+        const { authUrl } = await api.connectHandCash()
+        if (authUrl) {
+          window.location.href = authUrl
+        } else {
+          showError('HandCash not configured on server.')
+        }
+      } else if (provider === 'yours') {
+        // @ts-ignore
+        const yoursWallet = typeof window !== 'undefined' && ((window as any).yours || (window as any).panda)
+        if (!yoursWallet) {
+          showError('Yours Wallet extension not detected. Install from yours.org')
+          return
+        }
+        const pubKey = await yoursWallet.getPublicKey()
+        const w = await api.connectYours(pubKey)
+        const updated = [...wallets, w.id]
+        setWallets(updated)
+        localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
+        setSelectedWalletId(w.id)
+        setShowConnectModal(false)
+        success('Yours Wallet connected!')
+      } else if (provider === 'import') {
+        if (!data?.privateKey) return
+        const w = await api.importWallet(data.privateKey)
+        const updated = [...wallets, w.id]
+        setWallets(updated)
+        localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
+        setSelectedWalletId(w.id)
+        setShowConnectModal(false)
+        success('Wallet imported successfully!')
+      }
     } catch (err: any) {
-      showError(err.message)
+      showError(err.message || `Failed to connect via ${provider}`)
     } finally {
       setLoading(false)
     }
@@ -120,10 +131,7 @@ export default function WalletPage() {
 
   async function handleDisconnect() {
     if (!selectedWalletId || !wallet) return
-    
-    if (!confirm(`Disconnect wallet ${wallet.provider}? This cannot be undone.`)) {
-      return
-    }
+    if (!confirm(`Disconnect wallet ${wallet.provider}? This cannot be undone.`)) return
 
     try {
       setLoading(true)
@@ -157,65 +165,90 @@ export default function WalletPage() {
   }
 
   const getProviderBadge = (provider: string) => {
-    const colors = {
+    const colors: Record<string, string> = {
       handcash: 'bg-green-500/10 text-green-500 border-green-500/20',
       yours: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
       internal: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+      import: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+    }
+    const labels: Record<string, string> = {
+      handcash: '🤝 HandCash',
+      yours: '👛 Yours',
+      internal: '⚡ Internal',
+      import: '🔑 Imported',
     }
     return (
-      <span className={`inline-block px-3 py-1 text-xs font-medium border rounded ${colors[provider as keyof typeof colors] || colors.internal}`}>
-        {provider === 'handcash' ? '🤝 HandCash' : provider === 'yours' ? '👛 Yours' : '🔐 Internal'}
+      <span className={`inline-block px-3 py-1 text-xs font-medium border rounded ${colors[provider] || colors.internal}`}>
+        {labels[provider] || provider}
       </span>
     )
   }
 
+  const hasWallet = wallets.length > 0 && wallet
+
   return (
     <main className="min-h-screen py-12 px-6">
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
-      
+      <ConnectWalletModal
+        open={showConnectModal}
+        onClose={() => setShowConnectModal(false)}
+        onConnect={handleConnect}
+        loading={loading}
+      />
+      <OnboardingWizard
+        open={showOnboarding}
+        onClose={() => { setShowOnboarding(false); setWizardCreds(null) }}
+        onConnect={handleConnect}
+        loading={loading}
+        credentials={wizardCreds}
+      />
+
       <div className="max-w-5xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Wallet Management</h1>
-          <p className="text-gray-400">Connect your BSV wallet or create a new one</p>
-        </div>
-
-        {/* Connect Wallet Options */}
-        <div className="card mb-6">
-          <h2 className="text-xl font-semibold mb-4">Connect Wallet</h2>
-          <div className="grid md:grid-cols-3 gap-4">
-            <button
-              onClick={handleConnectInternal}
-              disabled={loading}
-              className="btn btn-primary flex flex-col items-center gap-2 py-6 relative"
-            >
-              <span className="text-2xl">🔐</span>
-              <span className="font-semibold">Create Wallet</span>
-              <span className="text-xs text-gray-400">Keys generated locally</span>
-            </button>
-
-            <button
-              onClick={handleConnectHandCash}
-              disabled={loading}
-              className="btn btn-secondary flex flex-col items-center gap-2 py-6 relative opacity-70"
-            >
-              <span className="text-2xl">🤝</span>
-              <span>HandCash</span>
-              <span className="text-xs text-yellow-500">Requires App ID</span>
-            </button>
-            
-            <button
-              onClick={handleConnectYours}
-              disabled={loading}
-              className="btn btn-secondary flex flex-col items-center gap-2 py-6 relative opacity-70"
-            >
-              <span className="text-2xl">👛</span>
-              <span>Yours Wallet</span>
-              <span className="text-xs text-yellow-500">Requires Extension</span>
-            </button>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-4xl font-bold mb-2">Wallet</h1>
+            <p className="text-gray-400">
+              {hasWallet ? 'Manage your BSV wallet' : 'Connect a wallet to get started'}
+            </p>
           </div>
+          <button
+            onClick={() => setShowConnectModal(true)}
+            className="btn btn-primary text-sm flex items-center gap-2"
+          >
+            <span>{hasWallet ? '+ Add Wallet' : '⚡ Connect Wallet'}</span>
+          </button>
         </div>
 
-        {/* New Wallet Alert (one-time) */}
+        {/* Empty State — no wallet connected */}
+        {!hasWallet && !newWallet && (
+          <div className="card flex flex-col items-center justify-center py-16 sm:py-20 text-center">
+            <div className="text-6xl mb-6">👛</div>
+            <h2 className="text-2xl font-bold mb-2">Welcome to AgentPay</h2>
+            <p className="text-gray-400 mb-8 max-w-md">
+              Connect your wallet or set up your AI agent to start using the marketplace.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => setShowOnboarding(true)}
+                className="btn btn-primary text-lg px-8 py-3"
+              >
+                🚀 Get Started
+              </button>
+              <button
+                onClick={() => setShowConnectModal(true)}
+                className="btn btn-secondary text-sm px-6 py-3"
+              >
+                Quick Connect →
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-4">
+              🔒 Your private key is shown once on creation — save it securely
+            </p>
+          </div>
+        )}
+
+        {/* New Wallet Credentials (one-time) */}
         {newWallet && (newPrivateKey || newApiKey) && (
           <div className="card mb-6 bg-yellow-500/5 border-yellow-500/20">
             <div className="flex items-start gap-3 mb-4">
@@ -223,7 +256,7 @@ export default function WalletPage() {
               <div>
                 <h3 className="font-semibold text-yellow-500 mb-1">Save Your Credentials!</h3>
                 <p className="text-sm text-gray-400">
-                  This is the ONLY time you'll see them. Store them securely — we don't save them.
+                  This is the ONLY time you'll see them. Store them securely.
                 </p>
               </div>
             </div>
@@ -241,21 +274,19 @@ export default function WalletPage() {
                 <CopyButton text={newPrivateKey} label="Copy Private Key" />
               </div>
             )}
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={() => { setNewWallet(null); setNewApiKey(null); setNewPrivateKey(null); }}
-                className="btn btn-secondary text-sm"
-              >
-                I've saved them — Close
-              </button>
-            </div>
+            <button
+              onClick={() => { setNewWallet(null); setNewApiKey(null); setNewPrivateKey(null) }}
+              className="btn btn-secondary text-sm mt-2"
+            >
+              ✓ I've saved them — Close
+            </button>
           </div>
         )}
 
-        {/* Wallet Selector */}
-        {wallets.length > 0 && (
+        {/* Wallet Selector (multiple wallets) */}
+        {wallets.length > 1 && (
           <div className="card mb-6">
-            <label className="label">Select Wallet</label>
+            <label className="label">Active Wallet</label>
             <select
               value={selectedWalletId || ''}
               onChange={(e) => setSelectedWalletId(e.target.value)}
@@ -277,10 +308,7 @@ export default function WalletPage() {
                   <h2 className="text-2xl font-bold mb-2">Wallet Details</h2>
                   {getProviderBadge(wallet.provider)}
                 </div>
-                <button
-                  onClick={handleDisconnect}
-                  className="btn btn-secondary text-sm"
-                >
+                <button onClick={handleDisconnect} className="btn btn-secondary text-sm">
                   Disconnect
                 </button>
               </div>
@@ -312,18 +340,28 @@ export default function WalletPage() {
                       <div className="text-2xl font-bold text-green-500">
                         {formatSats(wallet.balances.BSV)} <span className="text-sm text-gray-500">sats</span>
                       </div>
+                      {bsvPrice && (
+                        <div className="text-sm text-gray-400 mt-1">
+                          ≈ {satsToUsd(wallet.balances.BSV?.amount ?? wallet.balances.BSV, bsvPrice)} USD
+                        </div>
+                      )}
                     </div>
                     <div className="bg-[var(--bg)] rounded-lg p-4">
                       <div className="text-xs text-gray-500 mb-1">MNEE</div>
                       <div className="text-2xl font-bold text-blue-500">
                         {formatCurrency(wallet.balances.MNEE, 'MNEE')}
                       </div>
+                      {bsvPrice && (
+                        <div className="text-sm text-gray-400 mt-1">
+                          {formatMneeWithBsv(wallet.balances.MNEE?.amount ?? wallet.balances.MNEE, bsvPrice)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Fund Wallet (Demo Mode) - Internal wallets only */}
+              {/* Fund Wallet (Demo Mode) */}
               {wallet.provider === 'internal' && (
                 <div className="border-t border-[var(--border)] pt-4">
                   <label className="label">Fund Wallet (Demo Mode)</label>
@@ -351,7 +389,7 @@ export default function WalletPage() {
               )}
             </div>
 
-            {/* Tabs */}
+            {/* Transactions / UTXOs Tabs */}
             <div className="card">
               <div className="flex gap-4 mb-6 border-b border-[var(--border)] pb-3">
                 <button
@@ -371,20 +409,14 @@ export default function WalletPage() {
               {view === 'transactions' && (
                 <div>
                   {transactions.length === 0 ? (
-                    <div className="text-center py-8 text-gray-400">
-                      No transactions yet
-                    </div>
+                    <div className="text-center py-8 text-gray-400">No transactions yet</div>
                   ) : (
                     <div className="space-y-3">
                       {transactions.map((tx, i) => (
                         <div key={i} className="flex items-center justify-between p-4 bg-[var(--bg)] rounded-lg">
                           <div>
-                            <a
-                              href={getExplorerUrl(tx.txid)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-mono text-sm text-blue-500 hover:underline"
-                            >
+                            <a href={getExplorerUrl(tx.txid)} target="_blank" rel="noopener noreferrer"
+                              className="font-mono text-sm text-blue-500 hover:underline">
                               {tx.txid.slice(0, 12)}...{tx.txid.slice(-12)}
                             </a>
                             <div className="text-xs text-gray-500 mt-1">
@@ -406,9 +438,7 @@ export default function WalletPage() {
               {view === 'utxos' && (
                 <div>
                   {utxos.length === 0 ? (
-                    <div className="text-center py-8 text-gray-400">
-                      No UTXOs available
-                    </div>
+                    <div className="text-center py-8 text-gray-400">No UTXOs available</div>
                   ) : (
                     <div className="space-y-3">
                       {utxos.map((utxo, i) => (

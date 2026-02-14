@@ -7,7 +7,8 @@ import { ToastContainer } from '@/components/Toast'
 import { PaymentStatus } from '@/components/PaymentStatus'
 import { ReputationStars } from '@/components/ReputationStars'
 import { CATEGORIES } from '@/lib/utils'
-import { formatSats, formatDate, formatCurrency } from '@/lib/utils'
+import { formatSats, formatDate, formatCurrency, satsToUsd } from '@/lib/utils'
+import { useBsvPrice } from '@/lib/useBsvPrice'
 import type { Service, Reputation, Payment, Webhook, Dispute, Receipt, Wallet } from '@/lib/types'
 
 export default function DashboardPage() {
@@ -20,6 +21,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState<'services' | 'webhooks' | 'disputes'>('services')
 
+  const bsvPrice = useBsvPrice()
   const { toasts, success, error: showError, dismiss } = useToast()
 
   // Register Service Form
@@ -221,36 +223,102 @@ export default function DashboardPage() {
           <p className="text-gray-400">Manage your services and track earnings</p>
         </div>
 
-        {/* Agent Info */}
-        <div className="grid md:grid-cols-4 gap-5 mb-8">
+        {/* Analytics Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
           <div className="card">
-            <div className="text-sm text-gray-400 mb-1">Agent ID</div>
-            <div className="font-mono text-xs truncate">{agentWalletId}</div>
-          </div>
-          
-          {reputation && (
-            <>
-              <div className="card">
-                <div className="text-sm text-gray-400 mb-1">Total Services</div>
-                <div className="text-2xl font-bold">{reputation.totalServices}</div>
-              </div>
-              
-              <div className="card">
-                <div className="text-sm text-gray-400 mb-1">Success Rate</div>
-                <ReputationStars successRate={reputation.successRate} size="lg" />
-              </div>
-            </>
-          )}
-
-          {wallet?.balances && (
-            <div className="card">
-              <div className="text-sm text-gray-400 mb-1">Balances</div>
-              <div className="text-sm">
-                <div className="text-green-500">{formatSats(wallet.balances.BSV)} sats</div>
-                <div className="text-blue-500">{formatCurrency(wallet.balances.MNEE, 'MNEE')}</div>
-              </div>
+            <div className="text-xs sm:text-sm text-gray-400 mb-1">💰 Revenue</div>
+            <div className="text-xl sm:text-2xl font-bold text-green-500">
+              {wallet?.balances ? formatSats(wallet.balances.BSV?.amount ?? wallet.balances.BSV) : '0'} <span className="text-sm text-gray-500">sats</span>
             </div>
-          )}
+            {wallet?.balances && bsvPrice && (
+              <div className="text-xs text-gray-400 mt-1">
+                ≈ {satsToUsd(wallet.balances.BSV?.amount ?? wallet.balances.BSV, bsvPrice)}
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="text-xs sm:text-sm text-gray-400 mb-1">📦 Services</div>
+            <div className="text-xl sm:text-2xl font-bold">{services.length}</div>
+            <div className="text-xs text-gray-400 mt-1">
+              {services.filter(s => s.active).length} active
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="text-xs sm:text-sm text-gray-400 mb-1">⭐ Reputation</div>
+            {reputation ? (
+              <>
+                <div className="text-xl sm:text-2xl font-bold">
+                  {(reputation.successRate * 100).toFixed(0)}%
+                </div>
+                <ReputationStars successRate={reputation.successRate} size="sm" />
+              </>
+            ) : (
+              <div className="text-xl font-bold text-gray-500">—</div>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="text-xs sm:text-sm text-gray-400 mb-1">⚖️ Disputes</div>
+            <div className="text-xl sm:text-2xl font-bold">
+              {disputes.filter(d => d.status === 'open').length}
+            </div>
+            <div className="text-xs text-gray-400 mt-1">
+              {disputes.length} total
+            </div>
+          </div>
+        </div>
+
+        {/* Revenue Bar Chart (CSS-only) */}
+        {services.length > 0 && (
+          <div className="card mb-8">
+            <h2 className="text-lg font-semibold mb-4">Service Pricing Overview</h2>
+            <div className="space-y-3">
+              {services.map(service => {
+                const maxPrice = Math.max(...services.map(s => s.price), 1)
+                const widthPercent = Math.max((service.price / maxPrice) * 100, 5)
+                return (
+                  <div key={service.id} className="flex items-center gap-3">
+                    <div className="w-28 sm:w-36 text-sm text-gray-400 truncate flex-shrink-0">{service.name}</div>
+                    <div className="flex-1 bg-[var(--bg)] rounded-full h-6 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full flex items-center px-2 text-xs font-medium text-white ${
+                          service.active ? 'bg-gradient-to-r from-blue-600 to-blue-400' : 'bg-gray-600'
+                        }`}
+                        style={{ width: `${widthPercent}%`, minWidth: 'fit-content' }}
+                      >
+                        {service.currency === 'BSV' ? `${formatSats(service.price)} sats` : formatCurrency(service.price, service.currency)}
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 w-16 text-right flex-shrink-0">
+                      {service.currency === 'BSV' && bsvPrice ? satsToUsd(service.price, bsvPrice) : ''}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Quick Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-blue-500">{webhooks.length}</div>
+            <div className="text-xs text-gray-400">Webhooks</div>
+          </div>
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-purple-500">{services.filter(s => s.currency === 'BSV').length}</div>
+            <div className="text-xs text-gray-400">BSV Services</div>
+          </div>
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-green-500">{services.filter(s => s.currency === 'MNEE').length}</div>
+            <div className="text-xs text-gray-400">MNEE Services</div>
+          </div>
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-orange-500">{bsvPrice ? `$${bsvPrice.toFixed(2)}` : '—'}</div>
+            <div className="text-xs text-gray-400">BSV/USD</div>
+          </div>
         </div>
 
         {/* Register Service Form */}
