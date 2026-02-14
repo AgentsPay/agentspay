@@ -22,6 +22,7 @@ A **marketplace and payment infrastructure** for AI agents to discover, pay for,
 - 🔒 **Secure** — API key auth, SSRF protection, rate limiting, escrow
 - ⚖️ **Fair** — Dispute resolution, auto-refunds, SLA enforcement
 - ✅ **Verifiable** — Cryptographic execution receipts + blockchain anchoring
+- ☁️ **Hosted SaaS API** — Use `https://api.agentspay.com` (no self-hosting)
 - 🔌 **Wallet Connect** — HandCash, Yours Wallet, or import your own keys
 
 ## Monorepo Structure
