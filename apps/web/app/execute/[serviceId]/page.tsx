@@ -125,8 +125,8 @@ export default function ExecuteServicePage() {
           setReceipt(rcpt)
           
           // Set dispute window countdown
-          if (service.disputeWindowMs) {
-            const endsAt = new Date(Date.now() + service.disputeWindowMs)
+          if (service.disputeWindow) {
+            const endsAt = new Date(Date.now() + service.disputeWindow * 60 * 1000)
             setDisputeWindowEnds(endsAt)
           }
         } catch (err) {
@@ -238,18 +238,18 @@ export default function ExecuteServicePage() {
             </div>
           </div>
 
-          {(service.timeoutMs || service.disputeWindowMs) && (
+          {(service.timeout || service.disputeWindow) && (
             <div className="grid md:grid-cols-2 gap-6 mb-6">
-              {service.timeoutMs && (
+              {service.timeout && (
                 <div>
                   <div className="text-sm text-gray-400 mb-1">Timeout</div>
-                  <div className="text-lg">{Math.round(service.timeoutMs / 1000)}s</div>
+                  <div className="text-lg">{service.timeout}s</div>
                 </div>
               )}
-              {service.disputeWindowMs && (
+              {service.disputeWindow && (
                 <div>
                   <div className="text-sm text-gray-400 mb-1">Dispute Window</div>
-                  <div className="text-lg">{Math.round(service.disputeWindowMs / 1000 / 60)} minutes</div>
+                  <div className="text-lg">{service.disputeWindow} minutes</div>
                 </div>
               )}
             </div>
@@ -313,6 +313,82 @@ export default function ExecuteServicePage() {
         {/* Input */}
         <div className="card mb-6">
           <h2 className="text-xl font-semibold mb-4">Service Input</h2>
+
+          {/* Schema-driven form fields */}
+          {service.inputSchema?.properties && Object.keys(service.inputSchema.properties).length > 0 && (
+            <div className="mb-4 space-y-3 p-4 bg-[var(--bg)] rounded-lg">
+              <div className="text-sm text-gray-400 mb-2">Fill in the fields below:</div>
+              {Object.entries(service.inputSchema.properties as Record<string, any>).map(([fieldName, fieldDef]) => {
+                const isRequired = (service.inputSchema?.required || []).includes(fieldName)
+                const fieldType = fieldDef.type || 'string'
+                let currentVal = ''
+                try {
+                  const parsed = JSON.parse(input)
+                  currentVal = parsed[fieldName] !== undefined ? String(parsed[fieldName]) : ''
+                } catch {}
+
+                const updateField = (value: string) => {
+                  let parsed: any = {}
+                  try { parsed = JSON.parse(input) } catch {}
+                  if (fieldType === 'number' || fieldType === 'integer') {
+                    parsed[fieldName] = value === '' ? undefined : Number(value)
+                  } else if (fieldType === 'boolean') {
+                    parsed[fieldName] = value === 'true'
+                  } else {
+                    parsed[fieldName] = value
+                  }
+                  // Remove undefined keys
+                  Object.keys(parsed).forEach(k => parsed[k] === undefined && delete parsed[k])
+                  const newJson = JSON.stringify(parsed, null, 2)
+                  setInput(newJson)
+                  setInputValid(true)
+                  setParsedInput(parsed)
+                }
+
+                return (
+                  <div key={fieldName}>
+                    <label className="label">
+                      {fieldName}
+                      {isRequired && <span className="text-red-500 ml-1">*</span>}
+                      <span className="text-xs text-gray-500 ml-2">({fieldType})</span>
+                    </label>
+                    {fieldDef.description && (
+                      <p className="text-xs text-gray-500 mb-1">{fieldDef.description}</p>
+                    )}
+                    {fieldType === 'boolean' ? (
+                      <select
+                        value={currentVal || 'false'}
+                        onChange={(e) => updateField(e.target.value)}
+                        className="input"
+                      >
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                      </select>
+                    ) : (
+                      <input
+                        type={fieldType === 'number' || fieldType === 'integer' ? 'number' : 'text'}
+                        value={currentVal}
+                        onChange={(e) => updateField(e.target.value)}
+                        className="input"
+                        placeholder={fieldDef.default !== undefined ? `Default: ${fieldDef.default}` : `Enter ${fieldName}...`}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Raw schema display (if schema exists but no properties) */}
+          {service.inputSchema && !service.inputSchema.properties && (
+            <div className="mb-4 p-3 bg-[var(--bg)] rounded-lg">
+              <div className="text-xs text-gray-500 mb-1">Expected Input Schema</div>
+              <pre className="text-xs text-gray-400 overflow-x-auto">
+                {JSON.stringify(service.inputSchema, null, 2)}
+              </pre>
+            </div>
+          )}
+
           <JsonInput
             value={input}
             onChange={(val, valid, parsed) => {
@@ -322,7 +398,7 @@ export default function ExecuteServicePage() {
             }}
           />
           <p className="text-xs text-gray-500 mt-2">
-            Provide input as JSON. The service will receive this data.
+            {service.inputSchema?.properties ? 'JSON is synced with the form above. You can also edit directly.' : 'Provide input as JSON. The service will receive this data.'}
           </p>
         </div>
 
@@ -368,9 +444,9 @@ export default function ExecuteServicePage() {
                     Executed in {result.executionTimeMs}ms
                   </div>
                 </div>
-                {result.verified !== undefined && (
-                  <div className={`ml-auto px-3 py-1 text-sm rounded ${result.verified ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'}`}>
-                    {result.verified ? '✓ Verified' : '⚠ Unverified'}
+                {result.receipt && (
+                  <div className="ml-auto px-3 py-1 text-sm rounded bg-green-500/10 text-green-500">
+                    ✓ Verified Receipt
                   </div>
                 )}
               </div>
@@ -399,12 +475,12 @@ export default function ExecuteServicePage() {
                 )}
               </div>
 
-              {result.receiptHash && (
+              {result.receipt?.receiptHash && (
                 <div className="border-t border-green-500/20 pt-4 mb-4">
                   <div className="text-sm text-gray-400 mb-1">Receipt Hash</div>
                   <div className="flex items-center gap-2">
-                    <code className="text-xs flex-1 truncate">{result.receiptHash}</code>
-                    <CopyButton text={result.receiptHash} />
+                    <code className="text-xs flex-1 truncate">{result.receipt.receiptHash}</code>
+                    <CopyButton text={result.receipt.receiptHash} />
                   </div>
                 </div>
               )}

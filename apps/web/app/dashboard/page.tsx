@@ -6,10 +6,35 @@ import { useToast } from '@/lib/useToast'
 import { ToastContainer } from '@/components/Toast'
 import { PaymentStatus } from '@/components/PaymentStatus'
 import { ReputationStars } from '@/components/ReputationStars'
+import { CopyButton } from '@/components/CopyButton'
 import { CATEGORIES } from '@/lib/utils'
-import { formatSats, formatDate, formatCurrency, satsToUsd } from '@/lib/utils'
+import { formatSats, formatDate, formatCurrency, satsToUsd, getExplorerUrl } from '@/lib/utils'
 import { useBsvPrice } from '@/lib/useBsvPrice'
-import type { Service, Reputation, Payment, Webhook, Dispute, Receipt, Wallet } from '@/lib/types'
+import type { Service, Reputation, Payment, Webhook, Dispute, Receipt, Wallet, Execution } from '@/lib/types'
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100'
+
+// Identity types (inline — adapted from standalone page)
+interface AgentIdentity {
+  id: string
+  address: string
+  displayName: string
+  type: 'human' | 'agent' | 'service'
+  capabilities: string[]
+  metadata: Record<string, any>
+  reputation: {
+    score: number
+    totalTransactions: number
+    successRate: number
+    totalVolumeSats: number
+    attestations: number
+  }
+  registeredAt: string
+  lastUpdated: string
+  onChainTxId: string | null
+}
+
+type DashboardTab = 'services' | 'executions' | 'disputes' | 'webhooks' | 'identity'
 
 export default function DashboardPage() {
   const [agentWalletId, setAgentWalletId] = useState('')
@@ -18,8 +43,12 @@ export default function DashboardPage() {
   const [reputation, setReputation] = useState<Reputation | null>(null)
   const [webhooks, setWebhooks] = useState<Webhook[]>([])
   const [disputes, setDisputes] = useState<Dispute[]>([])
+  const [executions, setExecutions] = useState<Execution[]>([])
+  const [executionsTotal, setExecutionsTotal] = useState(0)
+  const [executionsOffset, setExecutionsOffset] = useState(0)
+  const [identities, setIdentities] = useState<AgentIdentity[]>([])
   const [loading, setLoading] = useState(false)
-  const [view, setView] = useState<'services' | 'webhooks' | 'disputes'>('services')
+  const [view, setView] = useState<DashboardTab>('services')
 
   const bsvPrice = useBsvPrice()
   const { toasts, success, error: showError, dismiss } = useToast()
@@ -33,8 +62,8 @@ export default function DashboardPage() {
     currency: 'BSV' as 'BSV' | 'MNEE',
     endpoint: '',
     method: 'POST',
-    timeoutMs: '30000',
-    disputeWindowMs: '1800000', // 30 min
+    timeout: '30',
+    disputeWindow: '30',
   })
 
   // Webhook Form
@@ -42,6 +71,12 @@ export default function DashboardPage() {
     url: '',
     events: [] as string[],
   })
+
+  // Identity Register Form
+  const [regName, setRegName] = useState('')
+  const [regType, setRegType] = useState<'human' | 'agent' | 'service'>('agent')
+  const [regCapabilities, setRegCapabilities] = useState('')
+  const [regAnchor, setRegAnchor] = useState(false)
 
   const WEBHOOK_EVENTS = [
     'payment.escrowed',
@@ -75,7 +110,7 @@ export default function DashboardPage() {
         api.getReputation(agentWalletId).catch(() => null),
         api.getWallet(agentWalletId).catch(() => null),
       ])
-      
+
       const myServices = allServices.filter(s => s.agentId === agentWalletId)
       setServices(myServices)
       setReputation(rep)
@@ -85,21 +120,43 @@ export default function DashboardPage() {
       try {
         const whs = await api.getWebhooks(agentWalletId)
         setWebhooks(whs)
-      } catch (err) {
-        // Webhooks might not be available
-      }
+      } catch (err) {}
 
       // Load disputes
       try {
         const disps = await api.getDisputes(agentWalletId)
         setDisputes(disps)
-      } catch (err) {
-        // Disputes might not be available
-      }
+      } catch (err) {}
+
+      // Load executions
+      try {
+        const exData = await api.getExecutions(agentWalletId, { limit: 20, offset: 0 })
+        setExecutions(exData.executions)
+        setExecutionsTotal(exData.total)
+        setExecutionsOffset(0)
+      } catch (err) {}
+
+      // Load identities
+      try {
+        const res = await fetch(`${API_URL}/api/identities`, { credentials: 'include' })
+        const data = await res.json()
+        setIdentities(data.identities || [])
+      } catch (err) {}
     } catch (err: any) {
       showError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadMoreExecutions(newOffset: number) {
+    try {
+      const exData = await api.getExecutions(agentWalletId, { limit: 20, offset: newOffset })
+      setExecutions(exData.executions)
+      setExecutionsTotal(exData.total)
+      setExecutionsOffset(newOffset)
+    } catch (err: any) {
+      showError(err.message)
     }
   }
 
@@ -120,9 +177,9 @@ export default function DashboardPage() {
         price: Number(formData.price),
         currency: formData.currency,
         endpoint: formData.endpoint,
-        method: formData.method,
-        timeoutMs: Number(formData.timeoutMs),
-        disputeWindowMs: Number(formData.disputeWindowMs),
+        method: formData.method as 'POST' | 'GET',
+        timeout: Number(formData.timeout),
+        disputeWindow: Number(formData.disputeWindow),
       })
       success('Service registered successfully!')
       setFormData({
@@ -133,8 +190,8 @@ export default function DashboardPage() {
         currency: 'BSV',
         endpoint: '',
         method: 'POST',
-        timeoutMs: '30000',
-        disputeWindowMs: '1800000',
+        timeout: '30',
+        disputeWindow: '30',
       })
       await loadDashboardData()
     } catch (err: any) {
@@ -186,6 +243,35 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleRegisterIdentity() {
+    if (!regName.trim()) return showError('Display name required')
+    try {
+      setLoading(true)
+      const res = await fetch(`${API_URL}/api/identity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          displayName: regName,
+          type: regType,
+          capabilities: regCapabilities.split(',').map(s => s.trim()).filter(Boolean),
+          anchorOnChain: regAnchor,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      success('Identity registered!')
+      setRegName('')
+      setRegCapabilities('')
+      setRegAnchor(false)
+      await loadDashboardData()
+    } catch (err: any) {
+      showError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const toggleEvent = (event: string) => {
     setWebhookForm(prev => ({
       ...prev,
@@ -193,6 +279,45 @@ export default function DashboardPage() {
         ? prev.events.filter(e => e !== event)
         : [...prev.events, event]
     }))
+  }
+
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      released: 'bg-green-500/10 text-green-500',
+      escrowed: 'bg-blue-500/10 text-blue-500',
+      refunded: 'bg-red-500/10 text-red-500',
+      disputed: 'bg-yellow-500/10 text-yellow-500',
+      pending: 'bg-gray-500/10 text-gray-400',
+    }
+    return (
+      <span className={`px-2 py-0.5 text-xs rounded ${styles[status] || styles.pending}`}>
+        {status}
+      </span>
+    )
+  }
+
+  const getDisputeStatusColor = (status: string) => {
+    switch (status) {
+      case 'open': return 'bg-yellow-500/10 text-yellow-500'
+      case 'resolved_refund': return 'bg-red-500/10 text-red-500'
+      case 'resolved_release': return 'bg-green-500/10 text-green-500'
+      case 'resolved_split': return 'bg-blue-500/10 text-blue-500'
+      default: return 'bg-gray-500/10 text-gray-400'
+    }
+  }
+
+  const getTypeBadge = (type: string) => {
+    const styles: Record<string, string> = {
+      human: 'bg-green-500/10 text-green-400 border-green-500/20',
+      agent: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+      service: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+    }
+    const icons: Record<string, string> = { human: '👤', agent: '🤖', service: '⚙️' }
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border rounded ${styles[type] || styles.agent}`}>
+        {icons[type]} {type}
+      </span>
+    )
   }
 
   if (!agentWalletId) {
@@ -213,10 +338,18 @@ export default function DashboardPage() {
     )
   }
 
+  const TABS: { key: DashboardTab; label: string; count: number }[] = [
+    { key: 'services', label: 'My Services', count: services.length },
+    { key: 'executions', label: 'My Executions', count: executionsTotal },
+    { key: 'disputes', label: 'Disputes', count: disputes.length },
+    { key: 'webhooks', label: 'Webhooks', count: webhooks.length },
+    { key: 'identity', label: 'Identity', count: identities.length },
+  ]
+
   return (
     <main className="min-h-screen py-12 px-6">
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
-      
+
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">Agent Dashboard</h1>
@@ -253,6 +386,9 @@ export default function DashboardPage() {
                   {(reputation.successRate * 100).toFixed(0)}%
                 </div>
                 <ReputationStars successRate={reputation.successRate} size="sm" />
+                <div className="text-xs text-gray-400 mt-1">
+                  {reputation.totalJobs} jobs
+                </div>
               </>
             ) : (
               <div className="text-xl font-bold text-gray-500">—</div>
@@ -337,7 +473,7 @@ export default function DashboardPage() {
                   placeholder="e.g., VulnScanner"
                 />
               </div>
-              
+
               <div>
                 <label className="label">Category</label>
                 <select
@@ -390,28 +526,28 @@ export default function DashboardPage() {
                   min="1"
                 />
               </div>
-              
+
               <div>
-                <label className="label">Timeout (ms)</label>
+                <label className="label">Timeout (seconds)</label>
                 <input
                   type="number"
-                  value={formData.timeoutMs}
-                  onChange={(e) => setFormData({ ...formData, timeoutMs: e.target.value })}
+                  value={formData.timeout}
+                  onChange={(e) => setFormData({ ...formData, timeout: e.target.value })}
                   className="input"
                   required
-                  min="1000"
+                  min="1"
                 />
               </div>
-              
+
               <div>
-                <label className="label">Dispute Window (ms)</label>
+                <label className="label">Dispute Window (minutes)</label>
                 <input
                   type="number"
-                  value={formData.disputeWindowMs}
-                  onChange={(e) => setFormData({ ...formData, disputeWindowMs: e.target.value })}
+                  value={formData.disputeWindow}
+                  onChange={(e) => setFormData({ ...formData, disputeWindow: e.target.value })}
                   className="input"
                   required
-                  min="60000"
+                  min="1"
                 />
               </div>
             </div>
@@ -431,7 +567,7 @@ export default function DashboardPage() {
                   <option value="DELETE">DELETE</option>
                 </select>
               </div>
-              
+
               <div>
                 <label className="label">Endpoint URL</label>
                 <input
@@ -451,29 +587,21 @@ export default function DashboardPage() {
           </form>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs — 5 tabs with horizontal scroll on mobile */}
         <div className="card">
-          <div className="flex gap-4 mb-6 border-b border-[var(--border)] pb-3">
-            <button
-              onClick={() => setView('services')}
-              className={`font-semibold ${view === 'services' ? 'text-blue-500' : 'text-gray-400'}`}
-            >
-              My Services ({services.length})
-            </button>
-            <button
-              onClick={() => setView('webhooks')}
-              className={`font-semibold ${view === 'webhooks' ? 'text-blue-500' : 'text-gray-400'}`}
-            >
-              Webhooks ({webhooks.length})
-            </button>
-            <button
-              onClick={() => setView('disputes')}
-              className={`font-semibold ${view === 'disputes' ? 'text-blue-500' : 'text-gray-400'}`}
-            >
-              Disputes ({disputes.length})
-            </button>
+          <div className="flex gap-4 mb-6 border-b border-[var(--border)] pb-3 overflow-x-auto">
+            {TABS.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setView(tab.key)}
+                className={`font-semibold whitespace-nowrap ${view === tab.key ? 'text-blue-500' : 'text-gray-400'}`}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
           </div>
 
+          {/* Services Tab */}
           {view === 'services' && (
             <div>
               {services.length === 0 ? (
@@ -516,12 +644,123 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Executions Tab */}
+          {view === 'executions' && (
+            <div>
+              {executions.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  No executions yet. Execute a service from the marketplace to see your history here.
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {executions.map(exec => (
+                      <div key={exec.paymentId} className="p-4 bg-[var(--bg)] rounded-lg">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h3 className="font-semibold mb-1">{exec.serviceName || 'Unknown Service'}</h3>
+                            <div className="text-xs text-gray-500">
+                              {formatDate(exec.createdAt)}
+                              {exec.executionTimeMs && ` • ${exec.executionTimeMs}ms`}
+                            </div>
+                          </div>
+                          <div className="text-right flex items-center gap-2">
+                            <div className="text-lg font-bold text-green-500">
+                              {exec.currency === 'BSV' ? `${formatSats(exec.amount)} sats` : formatCurrency(exec.amount, exec.currency)}
+                            </div>
+                            {getStatusBadge(exec.status)}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <span>Payment: <code>{exec.paymentId.slice(0, 12)}...</code></span>
+                          {exec.receiptHash && (
+                            <span className="text-green-500">✓ Receipt</span>
+                          )}
+                          {exec.disputeId && (
+                            <span className={exec.disputeStatus === 'open' ? 'text-yellow-500' : 'text-red-500'}>
+                              ⚖️ {exec.disputeStatus}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Pagination */}
+                  {executionsTotal > 20 && (
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--border)]">
+                      <button
+                        onClick={() => loadMoreExecutions(Math.max(0, executionsOffset - 20))}
+                        disabled={executionsOffset === 0}
+                        className="text-sm text-blue-500 disabled:text-gray-500"
+                      >
+                        ← Previous
+                      </button>
+                      <span className="text-xs text-gray-500">
+                        {executionsOffset + 1}–{Math.min(executionsOffset + 20, executionsTotal)} of {executionsTotal}
+                      </span>
+                      <button
+                        onClick={() => loadMoreExecutions(executionsOffset + 20)}
+                        disabled={executionsOffset + 20 >= executionsTotal}
+                        className="text-sm text-blue-500 disabled:text-gray-500"
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Disputes Tab */}
+          {view === 'disputes' && (
+            <div>
+              {disputes.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  No disputes found
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {disputes.map(dispute => (
+                    <div key={dispute.id} className="p-4 bg-[var(--bg)] rounded-lg">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <div className="font-semibold mb-1">{dispute.reason}</div>
+                          <div className="text-sm text-gray-400">Payment: {dispute.paymentId}</div>
+                        </div>
+                        <span className={`px-3 py-1 text-xs rounded ${getDisputeStatusColor(dispute.status)}`}>
+                          {dispute.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      {dispute.evidence && (
+                        <div className="text-xs text-gray-500 mt-2">
+                          Evidence: {dispute.evidence}
+                        </div>
+                      )}
+                      {dispute.resolution && (
+                        <div className="mt-2 p-2 bg-green-500/5 rounded border border-green-500/20 text-xs text-green-500">
+                          Resolution: {dispute.resolution}
+                        </div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-2">
+                        Opened {formatDate(dispute.createdAt)}
+                        {dispute.resolvedAt && ` • Resolved ${formatDate(dispute.resolvedAt)}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Webhooks Tab */}
           {view === 'webhooks' && (
             <div>
               {/* Create Webhook Form */}
               <form onSubmit={handleCreateWebhook} className="mb-6 p-4 bg-[var(--bg)] rounded-lg">
                 <h3 className="font-semibold mb-3">Add New Webhook</h3>
-                
+
                 <div className="mb-3">
                   <label className="label">Webhook URL</label>
                   <input
@@ -589,39 +828,122 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {view === 'disputes' && (
+          {/* Identity Tab */}
+          {view === 'identity' && (
             <div>
-              {disputes.length === 0 ? (
+              {/* Inline Register Form */}
+              <div className="mb-6 p-4 bg-[var(--bg)] rounded-lg">
+                <h3 className="font-semibold mb-3">Register Identity</h3>
+                <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="label">Display Name *</label>
+                    <input
+                      value={regName}
+                      onChange={e => setRegName(e.target.value)}
+                      placeholder="My AI Agent"
+                      className="input w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Type</label>
+                    <select value={regType} onChange={e => setRegType(e.target.value as any)} className="input w-full">
+                      <option value="agent">🤖 Agent</option>
+                      <option value="human">👤 Human</option>
+                      <option value="service">⚙️ Service</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <label className="label">Capabilities (comma-separated)</label>
+                  <input
+                    value={regCapabilities}
+                    onChange={e => setRegCapabilities(e.target.value)}
+                    placeholder="security-scanning, data-analysis, code-review"
+                    className="input w-full"
+                  />
+                </div>
+                <div className="flex items-center gap-4 mb-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={regAnchor}
+                      onChange={e => setRegAnchor(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span>Anchor on BSV blockchain (OP_RETURN)</span>
+                  </label>
+                </div>
+                <button onClick={handleRegisterIdentity} disabled={loading || !regName.trim()} className="btn btn-primary text-sm">
+                  {loading ? 'Registering...' : 'Register Identity'}
+                </button>
+              </div>
+
+              {/* Identity List */}
+              {identities.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">
-                  No disputes found
+                  No identities registered yet
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {disputes.map(dispute => (
-                    <div key={dispute.id} className="p-4 bg-[var(--bg)] rounded-lg">
+                  {identities.map(identity => (
+                    <div key={identity.id} className="p-4 bg-[var(--bg)] rounded-lg">
                       <div className="flex items-start justify-between mb-2">
                         <div>
-                          <div className="font-semibold mb-1">{dispute.reason}</div>
-                          <div className="text-sm text-gray-400">Payment: {dispute.paymentId}</div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold">{identity.displayName}</h3>
+                            {getTypeBadge(identity.type)}
+                          </div>
+                          <code className="text-xs text-gray-500">{identity.address}</code>
                         </div>
-                        <div className={`px-3 py-1 text-xs rounded ${
-                          dispute.status === 'open' ? 'bg-yellow-500/10 text-yellow-500' :
-                          dispute.status === 'resolved_refund' ? 'bg-red-500/10 text-red-500' :
-                          dispute.status === 'resolved_release' ? 'bg-green-500/10 text-green-500' :
-                          'bg-blue-500/10 text-blue-500'
-                        }`}>
-                          {dispute.status}
+                        <div className="text-right">
+                          <div className="text-xl font-bold text-blue-500">
+                            {identity.reputation.score}
+                          </div>
+                          <div className="text-xs text-gray-500">reputation</div>
                         </div>
                       </div>
-                      {dispute.evidence && (
-                        <div className="text-xs text-gray-500 mt-2">
-                          Evidence: {dispute.evidence}
+
+                      {identity.capabilities.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {identity.capabilities.slice(0, 4).map(cap => (
+                            <span key={cap} className="px-2 py-0.5 text-xs bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+                              {cap}
+                            </span>
+                          ))}
+                          {identity.capabilities.length > 4 && (
+                            <span className="text-xs text-gray-500">+{identity.capabilities.length - 4} more</span>
+                          )}
                         </div>
                       )}
-                      <div className="text-xs text-gray-500 mt-2">
-                        Opened {formatDate(dispute.createdAt)}
-                        {dispute.resolvedAt && ` • Resolved ${formatDate(dispute.resolvedAt)}`}
+
+                      <div className="grid grid-cols-4 gap-3 text-center text-xs">
+                        <div>
+                          <div className="font-semibold text-white">{identity.reputation.totalTransactions}</div>
+                          <div className="text-gray-500">txns</div>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-white">{(identity.reputation.successRate * 100).toFixed(0)}%</div>
+                          <div className="text-gray-500">success</div>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-white">{formatSats(identity.reputation.totalVolumeSats)}</div>
+                          <div className="text-gray-500">sats vol</div>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-white">{identity.reputation.attestations}</div>
+                          <div className="text-gray-500">reviews</div>
+                        </div>
                       </div>
+
+                      {identity.onChainTxId && (
+                        <div className="mt-2 pt-2 border-t border-[var(--border)] text-xs">
+                          <span className="text-green-500">✓ On-chain</span>
+                          {' · '}
+                          <a href={getExplorerUrl(identity.onChainTxId)} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                            {identity.onChainTxId.slice(0, 16)}...
+                          </a>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

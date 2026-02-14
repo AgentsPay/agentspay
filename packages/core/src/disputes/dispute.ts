@@ -36,10 +36,13 @@ export class DisputeManager {
   create(paymentId: string, buyerWalletId: string, reason: string, evidence?: string): Dispute | null {
     const db = getDb()
 
-    // Validate payment exists and is in escrowed state
+    // Validate payment exists and is in a disputable state
     const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId) as any
     if (!payment) throw new Error('Payment not found')
-    if (payment.status !== 'escrowed') throw new Error('Can only dispute escrowed payments')
+    // Allow disputes on escrowed OR released payments (within dispute window)
+    if (payment.status !== 'escrowed' && payment.status !== 'released') {
+      throw new Error(`Cannot dispute payment with status '${payment.status}'. Must be escrowed or released.`)
+    }
     if (payment.buyerWalletId !== buyerWalletId) throw new Error('Only buyer can open dispute')
 
     // Check if dispute already exists

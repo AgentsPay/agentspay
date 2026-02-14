@@ -10,7 +10,8 @@ import type {
   SearchFilters,
   Dispute,
   Webhook,
-  Receipt
+  Receipt,
+  Execution
 } from './types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100'
@@ -130,6 +131,20 @@ class AgentPayAPI {
 
   async disconnectWallet(id: string): Promise<void> {
     await this.fetch(`/api/wallets/${id}`, { method: 'DELETE' })
+  }
+
+  // ============ EXECUTIONS ============
+
+  async getExecutions(
+    walletId: string,
+    opts?: { limit?: number; offset?: number; status?: string }
+  ): Promise<{ executions: Execution[]; total: number; limit: number; offset: number }> {
+    const params = new URLSearchParams()
+    if (opts?.limit) params.set('limit', opts.limit.toString())
+    if (opts?.offset) params.set('offset', opts.offset.toString())
+    if (opts?.status) params.set('status', opts.status)
+    const query = params.toString()
+    return this.fetch(`/api/wallets/${walletId}/executions${query ? `?${query}` : ''}`)
   }
 
   // ============ SERVICES ============

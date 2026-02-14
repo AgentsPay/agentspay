@@ -1,13 +1,16 @@
-export type WalletProvider = 'internal' | 'handcash' | 'yours'
+export type WalletProvider = 'internal' | 'handcash' | 'yours' | 'import'
 
 export interface Wallet {
   id: string
+  publicKey?: string
   address: string
   privateKey?: string
-  provider: WalletProvider
+  provider?: WalletProvider
   externalId?: string
   createdAt: string
   balance?: number
+  balanceBsv?: number
+  balanceMnee?: number
   balances?: {
     BSV: {
       amount: number
@@ -31,11 +34,11 @@ export interface Service {
   price: number
   currency: Currency
   endpoint: string
-  method: string
+  method: 'POST' | 'GET'
   inputSchema?: any
   outputSchema?: any
-  timeoutMs?: number
-  disputeWindowMs?: number
+  timeout: number        // seconds (default 30)
+  disputeWindow: number  // minutes (default 30)
   active: boolean
   createdAt: string
   updatedAt: string
@@ -49,15 +52,13 @@ export interface Payment {
   amount: number
   platformFee: number
   currency: Currency
-  status: 'escrowed' | 'released' | 'refunded' | 'disputed'
-  txId: string | null
-  receiptHash?: string
-  blockchainAnchor?: string
-  verified: boolean
+  status: 'pending' | 'escrowed' | 'released' | 'refunded' | 'disputed'
+  disputeStatus?: string
+  txId?: string
+  escrowTxId?: string
+  releaseTxId?: string
   createdAt: string
-  releasedAt?: string
-  refundedAt?: string
-  disputeWindowEnds?: string
+  completedAt?: string
 }
 
 export interface Transaction {
@@ -70,18 +71,18 @@ export interface Transaction {
 export interface UTXO {
   txid: string
   vout: number
-  value: number
-  scriptPubKey: string
+  amount: number
+  script: string
 }
 
 export interface Reputation {
   agentId: string
-  totalServices: number
-  successfulExecutions: number
-  failedExecutions: number
-  totalRevenue: number
-  averageRating: number
-  successRate: number
+  totalJobs: number
+  successRate: number      // 0-1
+  avgResponseTimeMs: number
+  totalEarned: number      // satoshis
+  totalSpent: number       // satoshis
+  rating: number           // 1-5
 }
 
 export interface ExecuteResult {
@@ -91,12 +92,14 @@ export interface ExecuteResult {
   executionTimeMs: number
   cost: {
     amount: number
+    amountFormatted: string
     platformFee: number
-    currency: string
+    platformFeeFormatted: string
+    currency: Currency
   }
   txId: string
-  receiptHash?: string
-  verified?: boolean
+  disputeWindowMinutes: number
+  receipt?: Receipt
 }
 
 export interface Receipt {
@@ -112,26 +115,28 @@ export interface Receipt {
   receiptHash: string
   blockchainTxId?: string
   blockchainAnchoredAt?: string
-  createdAt: string
 }
 
 export interface Dispute {
   id: string
   paymentId: string
-  openedBy: string
+  buyerWalletId: string
+  providerWalletId: string
   reason: string
   evidence?: string
-  status: 'open' | 'resolved_refund' | 'resolved_release' | 'resolved_partial'
-  resolution?: string
-  createdAt: string
+  status: 'open' | 'under_review' | 'resolved_refund' | 'resolved_release' | 'resolved_split' | 'expired'
+  resolution?: 'refund' | 'release' | 'split'
+  splitPercent?: number
   resolvedAt?: string
+  createdAt: string
 }
 
 export interface Webhook {
   id: string
-  walletId: string
+  ownerId: string
   url: string
   events: string[]
+  secret?: string
   active: boolean
   createdAt: string
 }
@@ -140,6 +145,22 @@ export interface ApiResponse<T = any> {
   ok: boolean
   error?: string
   [key: string]: any
+}
+
+export interface Execution {
+  paymentId: string
+  serviceId: string
+  serviceName: string
+  amount: number
+  currency: Currency
+  status: string
+  platformFee: number
+  createdAt: string
+  completedAt?: string
+  executionTimeMs?: number
+  receiptHash?: string
+  disputeId?: string
+  disputeStatus?: string
 }
 
 export interface SearchFilters {

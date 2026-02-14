@@ -183,7 +183,7 @@ console.log(result.output)
                   ['POST', '/api/webhooks', 'Create webhook', '🔒'],
                   ['GET', '/api/health', 'Health check', '—'],
                 ].map(([method, endpoint, desc, auth]) => (
-                  <tr key={endpoint} className="border-b border-[var(--border)]/30">
+                  <tr key={`${method}-${endpoint}`} className="border-b border-[var(--border)]/30">
                     <td className={`py-2 px-3 font-bold ${method === 'GET' ? 'text-green-500' : method === 'POST' ? 'text-blue-500' : 'text-yellow-500'}`}>{method}</td>
                     <td className="py-2 px-3 text-gray-300">{endpoint}</td>
                     <td className="py-2 px-3 text-gray-500 font-sans">{desc}</td>

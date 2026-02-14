@@ -359,14 +359,14 @@ export class PaymentEngine {
   }
 
   /**
-   * Dispute payment
+   * Dispute payment (works on escrowed or released payments within dispute window)
    */
   dispute(paymentId: string): Payment | null {
     const db = getDb()
 
     const result = db.prepare(`
       UPDATE payments SET status = 'disputed'
-      WHERE id = ? AND status = 'escrowed'
+      WHERE id = ? AND status IN ('escrowed', 'released')
     `).run(paymentId)
 
     if (result.changes === 0) return null

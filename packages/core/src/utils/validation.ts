@@ -1,4 +1,5 @@
 import net from 'net'
+import { config } from '../config'
 
 export function isPrivateIp(ip: string): boolean {
   // IPv4 only (sufficient for audit scenarios)
@@ -22,6 +23,9 @@ export function validateServiceEndpoint(endpoint: string) {
     throw new Error('Invalid endpoint URL')
   }
   if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Endpoint must be http(s)')
+
+  // In demo mode, allow localhost and any port for testing
+  if (config.demoMode) return
 
   const host = u.hostname.toLowerCase()
   if (host === 'localhost' || host === '0.0.0.0') throw new Error('Endpoint host not allowed')

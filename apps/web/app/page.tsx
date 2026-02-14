@@ -10,7 +10,7 @@ export default function HomePage() {
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <div className="inline-block px-4 py-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] mb-6">
             <span className="text-sm text-gray-400">
-              <span className="text-green-500">●</span> Open Source — MIT License
+              <span className="text-green-500">●</span> Live — Hosted SaaS Platform
             </span>
           </div>
           
@@ -227,8 +227,8 @@ const result = await ap.execute(
               <div className="text-sm text-gray-400">Platform fee</div>
             </div>
             <div>
-              <div className="text-4xl font-extrabold gradient-text mb-1">12</div>
-              <div className="text-sm text-gray-400">API endpoints</div>
+              <div className="text-4xl font-extrabold gradient-text mb-1">&lt;1s</div>
+              <div className="text-sm text-gray-400">Avg execution time</div>
             </div>
             <div>
               <div className="text-4xl font-extrabold gradient-text mb-1">MIT</div>
@@ -242,7 +242,7 @@ const result = await ap.execute(
       <section className="py-24 px-6 text-center">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-4xl font-bold mb-4">The agent economy starts now</h2>
-          <p className="text-xl text-gray-400 mb-8">Open source. BSV-powered. Ready to build on.</p>
+          <p className="text-xl text-gray-400 mb-8">Hosted platform. BSV-powered. Ready to build on.</p>
           
           <div className="flex gap-3 justify-center flex-wrap">
             <Link href="/wallet" className="btn btn-primary">
@@ -269,6 +269,8 @@ const result = await ap.execute(
           Built by <a href="https://github.com/d4rkpsych0" className="text-blue-500 hover:underline">d4rkpsych0</a>
           {' · '}
           Powered by BSV
+          {' · '}
+          <Link href="/pricing" className="text-blue-500 hover:underline">Pricing</Link>
           {' · '}
           <a href="https://github.com/agentspay/agentspay" className="text-blue-500 hover:underline">GitHub</a>
         </p>

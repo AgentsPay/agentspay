@@ -5,9 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc && node -e \"require('fs').mkdirSync('dist/docs',{recursive:true})\" && node -e \"require('fs').copyFileSync('src/docs/openapi.yaml','dist/docs/openapi.yaml')\"",
-    "dev": "tsx src/server.ts",
+    "dev": "tsx --require dotenv/config src/server.ts",
     "start": "node dist/server.js",
-    "demo": "tsx ../../demo/demo.ts"
+    "demo": "tsx demo/demo.ts"
   },
   "dependencies": {
     "@agentspay/core": "workspace:*",

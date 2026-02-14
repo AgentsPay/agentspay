@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { CopyButton } from '@/components/CopyButton'
-import { ConnectWalletModal } from '@/components/ConnectWalletModal'
 import { OnboardingWizard } from '@/components/OnboardingWizard'
 import { useToast } from '@/lib/useToast'
 import { ToastContainer } from '@/components/Toast'
@@ -24,7 +23,6 @@ export default function WalletPage() {
   const [wizardCreds, setWizardCreds] = useState<{ apiKey?: string; privateKey?: string; walletId?: string; address?: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState<'transactions' | 'utxos'>('transactions')
-  const [showConnectModal, setShowConnectModal] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   const bsvPrice = useBsvPrice()
@@ -92,7 +90,7 @@ export default function WalletPage() {
         setNewApiKey(result.agent.apiKey)
         setNewPrivateKey(result.agent.privateKey)
         setSelectedWalletId(result.agent.walletId)
-        setShowConnectModal(false)
+        setShowOnboarding(false)
         setWizardCreds({
           apiKey: result.agent.apiKey,
           privateKey: result.agent.privateKey,
@@ -111,7 +109,7 @@ export default function WalletPage() {
         setNewApiKey(apiKey)
         setNewPrivateKey(privateKey)
         setSelectedWalletId(w.id)
-        setShowConnectModal(false)
+        setShowOnboarding(false)
         setWizardCreds({ apiKey, privateKey, walletId: w.id, address: w.address })
         success('Wallet created! Save your credentials below.')
       } else if (provider === 'handcash') {
@@ -134,7 +132,7 @@ export default function WalletPage() {
         setWallets(updated)
         localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
         setSelectedWalletId(w.id)
-        setShowConnectModal(false)
+        setShowOnboarding(false)
         success('Yours Wallet connected!')
       } else if (provider === 'import') {
         if (!data?.privateKey) return
@@ -143,7 +141,7 @@ export default function WalletPage() {
         setWallets(updated)
         localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
         setSelectedWalletId(w.id)
-        setShowConnectModal(false)
+        setShowOnboarding(false)
         success('Wallet imported successfully!')
       }
     } catch (err: any) {
@@ -213,12 +211,6 @@ export default function WalletPage() {
   return (
     <main className="min-h-screen py-12 px-6">
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
-      <ConnectWalletModal
-        open={showConnectModal}
-        onClose={() => setShowConnectModal(false)}
-        onConnect={handleConnect}
-        loading={loading}
-      />
       <OnboardingWizard
         open={showOnboarding}
         onClose={() => { setShowOnboarding(false); setWizardCreds(null) }}
@@ -237,7 +229,7 @@ export default function WalletPage() {
             </p>
           </div>
           <button
-            onClick={() => setShowConnectModal(true)}
+            onClick={() => setShowOnboarding(true)}
             className="btn btn-primary text-sm flex items-center gap-2"
           >
             <span>{hasWallet ? '+ Add Wallet' : '⚡ Connect Wallet'}</span>
@@ -252,20 +244,12 @@ export default function WalletPage() {
             <p className="text-gray-400 mb-8 max-w-md">
               Connect your wallet or set up your AI agent to start using the marketplace.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={() => setShowOnboarding(true)}
-                className="btn btn-primary text-lg px-8 py-3"
-              >
-                🚀 Get Started
-              </button>
-              <button
-                onClick={() => setShowConnectModal(true)}
-                className="btn btn-secondary text-sm px-6 py-3"
-              >
-                Quick Connect →
-              </button>
-            </div>
+            <button
+              onClick={() => setShowOnboarding(true)}
+              className="btn btn-primary text-lg px-8 py-3"
+            >
+              🚀 Get Started
+            </button>
             <p className="text-xs text-gray-500 mt-4">
               🔒 Your private key is shown once on creation — save it securely
             </p>
@@ -402,12 +386,16 @@ export default function WalletPage() {
                     </p>
                   </div>
 
-                  {/* Demo fund (only works in demo mode) */}
-                  <details className="text-sm">
-                    <summary className="text-gray-500 cursor-pointer hover:text-gray-300">
-                      Demo mode: add test balance
-                    </summary>
-                    <div className="flex gap-2 mt-2">
+                  {/* Demo fund — prominent card */}
+                  <div className="mt-4 bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">🧪</span>
+                      <h4 className="font-semibold text-purple-400">Test Mode: Fund Wallet</h4>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-3">
+                      Add test balance to try out the platform. Only works when demo mode is enabled on the server.
+                    </p>
+                    <div className="flex gap-2">
                       <input
                         type="number"
                         value={fundAmount}
@@ -419,15 +407,12 @@ export default function WalletPage() {
                       <button
                         onClick={handleFund}
                         disabled={loading || !fundAmount}
-                        className="btn btn-secondary text-sm"
+                        className="btn btn-primary text-sm bg-purple-600 hover:bg-purple-700"
                       >
                         Fund (Demo)
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Only works when server runs with AGENTPAY_DEMO=true
-                    </p>
-                  </details>
+                  </div>
                 </div>
               )}
             </div>
@@ -491,11 +476,11 @@ export default function WalletPage() {
                               {utxo.txid.slice(0, 12)}...:{utxo.vout}
                             </code>
                             <div className="font-semibold text-green-500">
-                              {formatSats(utxo.value)} sats
+                              {formatSats(utxo.amount)} sats
                             </div>
                           </div>
                           <div className="text-xs text-gray-500 font-mono break-all">
-                            {utxo.scriptPubKey}
+                            {utxo.script}
                           </div>
                         </div>
                       ))}

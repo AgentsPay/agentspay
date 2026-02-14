@@ -13,7 +13,7 @@ const COMPARISON = [
   { feature: 'Stablecoin', agentpay: '✅ MNEE', stripe: '❌ Fiat only', nevermined: '✅ Multi', skyfire: '✅ USDC' },
   { feature: 'Escrow + disputes', agentpay: '✅ Built-in', stripe: '⚠️ Chargebacks', nevermined: '❌', skyfire: '❌' },
   { feature: 'Open source', agentpay: '✅ MIT', stripe: '❌', nevermined: '⚠️ Partial', skyfire: '❌' },
-  { feature: 'Self-hostable', agentpay: '✅ Free', stripe: '❌', nevermined: '❌', skyfire: '❌' },
+  { feature: 'Hosted SaaS', agentpay: '✅ Managed', stripe: '✅', nevermined: '✅', skyfire: '✅' },
 ]
 
 export default function PricingPage() {
@@ -28,8 +28,7 @@ export default function PricingPage() {
             One fee. <span className="gradient-text">That's it.</span>
           </h1>
           <p className="text-lg text-gray-400 max-w-2xl mx-auto">
-            No plans, no tiers, no monthly bills. Every transaction costs 2% flat. 
-            Self-host for free if you want 0%.
+            No plans, no tiers, no monthly bills. Every transaction costs 2% flat.
           </p>
         </div>
 
@@ -153,23 +152,6 @@ export default function PricingPage() {
           </div>
         </div>
 
-        {/* Self-host callout */}
-        <div className="card mb-16 bg-purple-500/5 border-purple-500/20 text-center">
-          <div className="text-3xl mb-3">🏠</div>
-          <h3 className="text-xl font-bold mb-2">Self-Host = 0% Fees</h3>
-          <p className="text-sm text-gray-400 max-w-lg mx-auto mb-4">
-            AgentPay is fully open source (MIT). Clone the repo, run your own instance, 
-            and keep 100% of every transaction. You only pay BSV network fees (~$0.0000005).
-          </p>
-          <a 
-            href="https://github.com/agentspay/agentspay"
-            target="_blank"
-            className="btn btn-secondary inline-flex"
-          >
-            View on GitHub →
-          </a>
-        </div>
-
         {/* Comparison Table */}
         <div className="mb-16">
           <h2 className="text-2xl font-bold mb-6 text-center">How We Compare</h2>
@@ -205,7 +187,7 @@ export default function PricingPage() {
           <div className="space-y-4">
             {[
               { q: 'Why 2% and not per-transaction fixed fee?', a: 'Fixed fees kill micropayments. A $0.30 fee on a $0.001 service makes no sense. 2% scales linearly — you pay 0.00001 sats on a 0.0005 sat service, and 10,000 sats on a 500,000 sat audit.' },
-              { q: 'Can I really self-host for 0%?', a: 'Yes. MIT license. Fork the repo, change the platform wallet address to yours, deploy. Zero fees except BSV network costs (~$0.0000005/tx).' },
+              { q: 'What do I get for 2%?', a: 'Fully managed infrastructure: wallet hosting, escrow engine, dispute resolution, identity registry, webhook delivery, execution verification, SDK support, and continuous platform updates. You focus on building — we handle the payment layer.' },
               { q: 'What about refunds?', a: 'No platform fee on refunded transactions. If a service fails or the buyer disputes and wins, the 2% is not charged.' },
               { q: 'Do I pay fees on MNEE too?', a: 'Same 2% flat fee regardless of currency. MNEE (USD stablecoin) and BSV (satoshis) are both supported.' },
               { q: 'Is there a minimum transaction?', a: 'No minimum. BSV supports sub-satoshi fees. You can run a service for 1 satoshi if you want.' },

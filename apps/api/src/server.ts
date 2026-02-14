@@ -675,6 +675,59 @@ app.get('/api/wallets/:id/transactions', async (req, res) => {
   }
 })
 
+// ============ EXECUTIONS (purchase history) ============
+
+app.get('/api/wallets/:id/executions', authMiddleware, requireWalletMatch, (req, res) => {
+  try {
+    const walletId = String(req.params.id)
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100)
+    const offset = Math.max(Number(req.query.offset) || 0, 0)
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined
+
+    const db = getDb()
+
+    let whereClause = 'WHERE p.buyerWalletId = ?'
+    const params: any[] = [walletId]
+
+    if (status) {
+      whereClause += ' AND p.status = ?'
+      params.push(status)
+    }
+
+    const countRow = db.prepare(
+      `SELECT COUNT(*) as total FROM payments p ${whereClause}`
+    ).get(...params) as { total: number }
+
+    const executions = db.prepare(
+      `SELECT
+        p.id as paymentId,
+        p.serviceId,
+        s.name as serviceName,
+        p.amount,
+        p.currency,
+        p.status,
+        p.platformFee,
+        p.createdAt,
+        p.completedAt,
+        r.executionTimeMs,
+        r.receiptHash,
+        d.id as disputeId,
+        d.status as disputeStatus
+      FROM payments p
+      LEFT JOIN services s ON p.serviceId = s.id
+      LEFT JOIN execution_receipts r ON p.id = r.paymentId
+      LEFT JOIN disputes d ON p.id = d.paymentId
+      ${whereClause}
+      ORDER BY p.createdAt DESC
+      LIMIT ? OFFSET ?`
+    ).all(...params, limit, offset)
+
+    res.json({ ok: true, executions, total: countRow.total, limit, offset })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // ============ FUND (testnet/demo only) ============
 
 app.post('/api/wallets/:id/fund', authMiddleware, requireWalletMatch, async (req, res) => {
@@ -813,7 +866,7 @@ app.get('/api/receipts/:paymentId/verify', async (req, res) => {
 // ============ HEALTH ============
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'agentpay', version: '0.1.0' })
+  res.json({ ok: true, service: 'agentpay', version: '0.2.0' })
 })
 
 // JSON parse error handler (avoid stack traces)

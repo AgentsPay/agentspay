@@ -55,13 +55,13 @@ export function ServiceCard({ service, reputation }: ServiceCardProps) {
         <p className="text-sm text-gray-400 mb-4 line-clamp-2">{service.description}</p>
         
         {/* Timeout and Dispute Window */}
-        {(service.timeoutMs || service.disputeWindowMs) && (
+        {(service.timeout || service.disputeWindow) && (
           <div className="text-xs text-gray-500 mb-3 space-y-1">
-            {service.timeoutMs && (
-              <div>⏱️ Timeout: {Math.round(service.timeoutMs / 1000)}s</div>
+            {service.timeout && (
+              <div>⏱️ Timeout: {service.timeout}s</div>
             )}
-            {service.disputeWindowMs && (
-              <div>⚖️ Dispute window: {Math.round(service.disputeWindowMs / 1000 / 60)}min</div>
+            {service.disputeWindow && (
+              <div>⚖️ Dispute window: {service.disputeWindow}min</div>
             )}
           </div>
         )}
