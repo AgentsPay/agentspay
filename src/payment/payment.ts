@@ -65,8 +65,16 @@ export class PaymentEngine {
     const platformAddress = this.getPlatformEscrowAddress()
 
     try {
-      const txHex = buildTransaction(utxos, [{ address: platformAddress, amount }], buyerWallet.address, buyerPrivKey)
+      console.log('[PAYMENT DEBUG] Building escrow transaction...')
+      console.log('[PAYMENT DEBUG] UTXOs:', JSON.stringify(utxos, null, 2))
+      console.log('[PAYMENT DEBUG] Platform address:', platformAddress)
+      console.log('[PAYMENT DEBUG] Amount:', amount)
+      
+      const txHex = await buildTransaction(utxos, [{ address: platformAddress, amount }], buyerWallet.address, buyerPrivKey)
+      console.log('[PAYMENT DEBUG] Transaction built successfully, hex length:', txHex.length)
+      
       const txId = await broadcastTx(txHex)
+      console.log('[PAYMENT DEBUG] Transaction broadcast successfully:', txId)
 
       db.prepare(`
         INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status, escrowTxId, createdAt)
@@ -75,6 +83,8 @@ export class PaymentEngine {
 
       return { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status: 'escrowed', txId, createdAt: now }
     } catch (error: any) {
+      console.error('[PAYMENT DEBUG] Error creating escrow transaction:', error)
+      console.error('[PAYMENT DEBUG] Error stack:', error.stack)
       throw new Error(`Failed to create escrow transaction: ${error.message}`)
     }
   }
@@ -82,8 +92,11 @@ export class PaymentEngine {
   /**
    * Release payment (service completed successfully)
    * Platform sends escrowed funds to seller
+   * 
+   * ⚠️ SECURITY: Internal use only. Not exposed via API.
+   * Only callable from execute flow.
    */
-  async release(paymentId: string): Promise<Payment | null> {
+  async releaseInternal(paymentId: string): Promise<Payment | null> {
     const db = getDb()
     const payment = this.getById(paymentId)
     if (!payment || payment.status !== 'escrowed') return null
@@ -107,7 +120,7 @@ export class PaymentEngine {
       if (utxos.length === 0) throw new Error('Platform wallet has no UTXOs')
 
       const sellerPayout = payment.amount - payment.platformFee
-      const txHex = buildTransaction(utxos, [{ address: sellerWallet.address, amount: sellerPayout }], platformAddress, platformPrivKey)
+      const txHex = await buildTransaction(utxos, [{ address: sellerWallet.address, amount: sellerPayout }], platformAddress, platformPrivKey)
       const releaseTxId = await broadcastTx(txHex)
 
       db.prepare(`UPDATE payments SET status = 'released', releaseTxId = ?, completedAt = ? WHERE id = ?`)
@@ -122,8 +135,11 @@ export class PaymentEngine {
   /**
    * Refund payment (service failed)
    * Platform returns escrowed funds to buyer
+   * 
+   * ⚠️ SECURITY: Internal use only. Not exposed via API.
+   * Only callable from execute flow.
    */
-  async refund(paymentId: string): Promise<Payment | null> {
+  async refundInternal(paymentId: string): Promise<Payment | null> {
     const db = getDb()
     const payment = this.getById(paymentId)
     if (!payment || payment.status !== 'escrowed') return null
@@ -146,7 +162,7 @@ export class PaymentEngine {
       const utxos = await this.wallets.getUtxos(platformWallet.id)
       if (utxos.length === 0) throw new Error('Platform wallet has no UTXOs')
 
-      const txHex = buildTransaction(utxos, [{ address: buyerWallet.address, amount: payment.amount }], platformAddress, platformPrivKey)
+      const txHex = await buildTransaction(utxos, [{ address: buyerWallet.address, amount: payment.amount }], platformAddress, platformPrivKey)
       const refundTxId = await broadcastTx(txHex)
 
       db.prepare(`UPDATE payments SET status = 'refunded', releaseTxId = ?, completedAt = ? WHERE id = ?`)

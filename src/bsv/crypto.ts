@@ -4,7 +4,7 @@
  * Handles key generation, encryption, address derivation, and transaction building.
  */
 
-import { PrivateKey, PublicKey, P2PKH, Transaction, ARC } from '@bsv/sdk'
+import { PrivateKey, PublicKey, P2PKH, Transaction, ARC, Script } from '@bsv/sdk'
 import crypto from 'crypto'
 import { config } from '../config'
 
@@ -96,25 +96,56 @@ export interface UTXO {
  * @param privateKey - Private key for signing
  * @returns Signed transaction hex
  */
-export function buildTransaction(
+export async function buildTransaction(
   utxos: UTXO[],
   outputs: Array<{ address: string; amount: number }>,
   changeAddress: string,
   privateKey: PrivateKey
-): string {
+): Promise<string> {
+  console.log('[DEBUG] buildTransaction called with', {
+    utxoCount: utxos.length,
+    outputCount: outputs.length,
+    changeAddress,
+  })
+  
   const tx = new Transaction()
+  console.log('[DEBUG] Transaction object created')
 
   // Add inputs
   let totalInput = 0
-  for (const utxo of utxos) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(privateKey),
-      sequence: 0xffffffff,
-    })
-    totalInput += utxo.amount
+  for (let i = 0; i < utxos.length; i++) {
+    const utxo = utxos[i]
+    console.log(`[DEBUG] Processing UTXO ${i}:`, { txid: utxo.txid, vout: utxo.vout, amount: utxo.amount })
+    
+    try {
+      const lockingScript = Script.fromHex(utxo.script)
+      console.log('[DEBUG] Locking script created from hex')
+      
+      // Create unlock template - simpler approach
+      const unlockTemplate = new P2PKH().unlock(privateKey)
+      console.log('[DEBUG] Unlock template created')
+      
+      tx.addInput({
+        sourceTransaction: {
+          outputs: [{
+            lockingScript,
+            satoshis: utxo.amount,
+          }],
+        } as any,
+        sourceTXID: utxo.txid,
+        sourceOutputIndex: utxo.vout,
+        unlockingScriptTemplate: unlockTemplate,
+        sequence: 0xffffffff,
+      })
+      console.log(`[DEBUG] Input ${i} added successfully`)
+      totalInput += utxo.amount
+    } catch (error: any) {
+      console.error(`[DEBUG] Failed to add input ${i}:`, error.message)
+      throw error
+    }
   }
+  
+  console.log('[DEBUG] All inputs added, totalInput:', totalInput)
 
   // Add outputs
   let totalOutput = 0
@@ -127,24 +158,51 @@ export function buildTransaction(
     totalOutput += output.amount
   }
 
-  // Calculate fee (1 sat/byte estimate)
-  const estimatedSize = tx.toBinary().length + (148 * utxos.length) // rough estimate
-  const fee = Math.ceil(estimatedSize * config.feePerByte)
+  // Calculate fee (estimate without serializing)
+  // P2PKH input: ~148 bytes, P2PKH output: ~34 bytes, overhead: ~10 bytes
+  const estimatedSize = 10 + (148 * utxos.length) + (34 * (outputs.length + 1)) // +1 for potential change
+  const fee = Math.max(250, Math.ceil(estimatedSize * config.feePerByte)) // Minimum 250 sats
+  console.log('[DEBUG] Estimated fee:', fee, 'sats for estimated size:', estimatedSize, 'bytes')
 
   // Add change output if needed
   const change = totalInput - totalOutput - fee
+  console.log('[DEBUG] Change calculation:', { totalInput, totalOutput, fee, change })
   if (change > 546) { // dust limit
     const lockingScript = new P2PKH().lock(changeAddress)
     tx.addOutput({
       lockingScript,
       satoshis: change,
     })
+    console.log('[DEBUG] Added change output:', change, 'sats')
+  } else {
+    console.log('[DEBUG] No change output (dust or negative):', change)
   }
 
   // Sign transaction
-  tx.sign()
-
-  return tx.toHex()
+  try {
+    console.log('[DEBUG] Transaction before signing:', {
+      inputs: tx.inputs?.length || 0,
+      outputs: tx.outputs?.length || 0,
+    })
+    
+    // Sign using the private key
+    await tx.sign()
+    
+    console.log('[DEBUG] Transaction signed successfully')
+    console.log('[DEBUG] Checking if inputs have unlockingScripts...')
+    for (let i = 0; i < tx.inputs.length; i++) {
+      const input = tx.inputs[i]
+      console.log(`[DEBUG] Input ${i} unlockingScript:`, input.unlockingScript ? 'present' : 'MISSING')
+    }
+    
+    const txHex = tx.toHex()
+    console.log('[DEBUG] Transaction serialized to hex, length:', txHex.length)
+    return txHex
+  } catch (error: any) {
+    console.error('[DEBUG] Transaction signing failed:', error.message)
+    console.error('[DEBUG] Stack:', error.stack)
+    throw error
+  }
 }
 
 /**
@@ -166,4 +224,12 @@ export function verifyTransaction(txHex: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Get P2PKH locking script hex for an address
+ */
+export function getScriptForAddress(address: string): string {
+  const lockingScript = new P2PKH().lock(address)
+  return lockingScript.toHex()
 }

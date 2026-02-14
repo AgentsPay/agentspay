@@ -8,10 +8,12 @@ import {
   encryptPrivateKey,
   decryptPrivateKey,
   privateKeyFromWif,
+  getScriptForAddress,
 } from '../bsv/crypto'
 import { getBalance as getOnChainBalance, getUtxos, getTxOutScript } from '../bsv/whatsonchain'
 import { config } from '../config'
 import type { UTXO } from '../bsv/crypto'
+import { generateApiKey, hashApiKey } from '../middleware/auth'
 
 /**
  * BSV Wallet Manager
@@ -22,8 +24,11 @@ export class WalletManager {
 
   /**
    * Create a new agent wallet with real BSV keys
+   * 
+   * ⚠️ SECURITY: Returns privateKey and apiKey ONCE on creation only.
+   * User MUST save these securely - they cannot be retrieved later.
    */
-  create(): AgentWallet & { privateKey: string } {
+  create(): AgentWallet & { privateKey: string; apiKey: string } {
     const db = getDb()
     const id = uuid()
 
@@ -36,18 +41,53 @@ export class WalletManager {
     // Encrypt private key for storage
     const encryptedPrivKey = encryptPrivateKey(privateKeyWif)
 
+    // Generate API key for authentication
+    const apiKey = generateApiKey()
+    const apiKeyHash = hashApiKey(apiKey)
+
     db.prepare(`
-      INSERT INTO wallets (id, publicKey, address, privateKey, createdAt)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, publicKey, address, encryptedPrivKey, new Date().toISOString())
+      INSERT INTO wallets (id, publicKey, address, privateKey, apiKeyHash, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, publicKey, address, encryptedPrivKey, apiKeyHash, new Date().toISOString())
 
     return {
       id,
       publicKey,
       address,
       createdAt: new Date().toISOString(),
-      privateKey: privateKeyWif, // Only returned on creation! Store securely.
+      privateKey: privateKeyWif, // ⚠️ Only returned on creation! Store securely.
+      apiKey, // ⚠️ Only returned on creation! Required for API access.
     }
+  }
+
+  /**
+   * Import wallet from WIF private key
+   * 
+   * ⚠️ SECURITY: Returns apiKey ONCE on import only.
+   */
+  importFromWif(wif: string): AgentWallet & { apiKey: string } {
+    const db = getDb()
+    const id = uuid()
+    const privKey = privateKeyFromWif(wif)
+    const publicKey = getPublicKeyHex(privKey)
+    const address = deriveAddress(privKey)
+    const encryptedPrivKey = encryptPrivateKey(wif)
+    
+    // Generate API key for authentication
+    const apiKey = generateApiKey()
+    const apiKeyHash = hashApiKey(apiKey)
+    
+    // Check if already exists
+    const existing = db.prepare('SELECT id, publicKey, address, createdAt FROM wallets WHERE address = ?').get(address) as any
+    if (existing) {
+      // Wallet exists - cannot return API key for security
+      throw new Error('Wallet already exists. Cannot import duplicate.')
+    }
+    
+    db.prepare('INSERT INTO wallets (id, publicKey, address, privateKey, apiKeyHash, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, publicKey, address, encryptedPrivKey, apiKeyHash, new Date().toISOString())
+    
+    return { id, publicKey, address, createdAt: new Date().toISOString(), apiKey }
   }
 
   /**
@@ -108,26 +148,23 @@ export class WalletManager {
     try {
       const wocUtxos = await getUtxos(wallet.address)
       
-      // Convert to our UTXO format and fetch scripts
-      const utxos: UTXO[] = []
-      for (const wocUtxo of wocUtxos) {
-        try {
-          const script = await getTxOutScript(wocUtxo.tx_hash, wocUtxo.tx_pos)
-          utxos.push({
-            txid: wocUtxo.tx_hash,
-            vout: wocUtxo.tx_pos,
-            amount: wocUtxo.value,
-            script,
-          })
-        } catch (err) {
-          console.error(`Failed to fetch script for ${wocUtxo.tx_hash}:${wocUtxo.tx_pos}`, err)
-        }
-      }
+      // Convert to our UTXO format - derive script from address (P2PKH)
+      // This avoids rate limits from fetching each transaction
+      const script = getScriptForAddress(wallet.address)
+      
+      const utxos: UTXO[] = wocUtxos.map(wocUtxo => ({
+        txid: wocUtxo.tx_hash,
+        vout: wocUtxo.tx_pos,
+        amount: wocUtxo.value,
+        script, // Use derived P2PKH script
+      }))
 
       // Update local UTXO cache
-      this.syncUtxos(walletId, utxos)
+      if (utxos.length > 0) {
+        this.syncUtxos(walletId, utxos)
+      }
       
-      return utxos
+      return utxos.length > 0 ? utxos : this.getCachedUtxos(walletId)
     } catch (error) {
       console.error(`Failed to fetch UTXOs for ${wallet.address}:`, error)
       // Fallback to cached UTXOs
@@ -185,7 +222,7 @@ export class WalletManager {
     const db = getDb()
     
     // Mark all existing UTXOs as spent
-    db.prepare('UPDATE utxos SET spent = 1, spentAt = datetime("now") WHERE walletId = ? AND spent = 0').run(walletId)
+    db.prepare('UPDATE utxos SET spent = 1, spentAt = datetime(\'now\') WHERE walletId = ? AND spent = 0').run(walletId)
 
     // Insert/update current UTXOs
     const stmt = db.prepare(`

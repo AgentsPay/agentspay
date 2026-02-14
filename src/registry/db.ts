@@ -22,6 +22,7 @@ function initSchema(db: Database.Database) {
       publicKey TEXT NOT NULL,
       address TEXT NOT NULL UNIQUE,
       privateKey TEXT,
+      apiKeyHash TEXT,
       createdAt TEXT NOT NULL DEFAULT (datetime('now'))
     );
 

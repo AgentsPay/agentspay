@@ -4,6 +4,27 @@
  * Controls network settings, API endpoints, and platform parameters.
  */
 
+// Demo mode check
+const isDemoMode = process.env.AGENTPAY_DEMO === 'true' || process.env.AGENTPAY_DEMO === '1'
+
+// CRITICAL: Enforce master key in production
+if (!isDemoMode) {
+  if (!process.env.AGENTPAY_MASTER_KEY) {
+    console.error('❌ FATAL ERROR: AGENTPAY_MASTER_KEY environment variable not set')
+    console.error('Generate a secure key with: openssl rand -hex 32')
+    console.error('Set it in .env: AGENTPAY_MASTER_KEY=<your-key>')
+    console.error('')
+    console.error('For demo/testing only, set AGENTPAY_DEMO=true')
+    process.exit(1)
+  }
+
+  if (process.env.AGENTPAY_MASTER_KEY.length < 32) {
+    console.error('❌ FATAL ERROR: AGENTPAY_MASTER_KEY must be at least 32 characters')
+    console.error('Generate a secure key with: openssl rand -hex 32')
+    process.exit(1)
+  }
+}
+
 export const config = {
   // BSV Network: 'mainnet' | 'testnet'
   network: (process.env.BSV_NETWORK || 'testnet') as 'mainnet' | 'testnet',
@@ -26,7 +47,15 @@ export const config = {
 
   // Demo mode: use internal ledger instead of on-chain transactions
   // Set AGENTPAY_DEMO=true for local testing without real BSV
-  demoMode: process.env.AGENTPAY_DEMO === 'true' || process.env.AGENTPAY_DEMO === '1',
+  demoMode: isDemoMode,
+
+  // Demo mode: skip authentication (for testing only)
+  // Can be enabled even in non-demo mode for testing purposes
+  demoSkipAuth: (() => {
+    const skipAuth = process.env.AGENTPAY_DEMO_SKIP_AUTH === 'true'
+    console.log('[CONFIG DEBUG] demoSkipAuth:', skipAuth, '(env value:', process.env.AGENTPAY_DEMO_SKIP_AUTH, ')')
+    return skipAuth
+  })(),
 
   // Minimum transaction fee (satoshis/byte)
   feePerByte: 1,
@@ -34,9 +63,8 @@ export const config = {
   // Private key encryption settings
   encryption: {
     algorithm: 'aes-256-gcm' as const,
-    // In production, use a secure key management system (KMS)
-    // For MVP, we'll store encrypted keys with a master key from env
-    masterKey: process.env.AGENTPAY_MASTER_KEY || 'dev-only-insecure-key-change-in-prod',
+    // Master key is REQUIRED (enforced at startup unless in demo mode)
+    masterKey: process.env.AGENTPAY_MASTER_KEY || 'demo-mode-insecure-key-for-testing-only',
   },
 
   // Platform escrow wallet (for MVP)
