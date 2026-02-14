@@ -493,8 +493,18 @@ app.put('/api/webhooks/:id', requireApiKey, (req, res) => {
     const { url, events, active } = req.body
 
     const updates: any = {}
-    if (url !== undefined) updates.url = url
-    if (events !== undefined) updates.events = events
+    if (url !== undefined) {
+      if (typeof url !== 'string') {
+        return res.status(400).json({ error: 'URL must be a string' })
+      }
+      updates.url = url
+    }
+    if (events !== undefined) {
+      if (!Array.isArray(events)) {
+        return res.status(400).json({ error: 'Events must be an array' })
+      }
+      updates.events = events
+    }
     if (active !== undefined) updates.active = active
 
     const webhook = webhooks.update(String(req.params.id), updates, auth.id)
@@ -509,7 +519,7 @@ app.put('/api/webhooks/:id', requireApiKey, (req, res) => {
 app.delete('/api/webhooks/:id', requireApiKey, (req, res) => {
   try {
     const auth = (req as any).authWallet as { id: string }
-    const deleted = webhooks.delete(String(req.params.id), auth.id)
+    const deleted = webhooks.delete(req.params.id as string, auth.id)
     if (!deleted) return res.status(404).json({ error: 'Webhook not found' })
     res.json({ ok: true })
   } catch (e: any) {

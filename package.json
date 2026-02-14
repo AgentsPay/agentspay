@@ -18,7 +18,7 @@
     "agentspay": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').mkdirSync('dist/docs',{recursive:true})\" && node -e \"require('fs').copyFileSync('src/docs/openapi.yaml','dist/docs/openapi.yaml')\"",
     "start": "node dist/index.js",
     "dev": "npx tsx src/index.ts",
     "demo": "npx tsx demo/demo.ts",
