@@ -7,6 +7,29 @@ export function formatSats(sats: number): string {
   return new Intl.NumberFormat('en-US').format(sats)
 }
 
+export function formatCurrency(amount: number, currency: 'BSV' | 'MNEE'): string {
+  if (currency === 'BSV') {
+    return `${formatSats(amount)} sats`
+  } else {
+    // MNEE is USD-pegged
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(amount / 100) // assuming MNEE is in cents
+  }
+}
+
+export function formatPrice(price: number, currency: 'BSV' | 'MNEE'): string {
+  if (currency === 'BSV') {
+    return formatSats(price)
+  } else {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(price / 100)
+  }
+}
+
 export function formatDate(date: string | Date): string {
   return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',

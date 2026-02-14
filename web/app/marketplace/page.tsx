@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { ServiceCard } from '@/components/ServiceCard'
 import { api } from '@/lib/api'
 import { CATEGORIES } from '@/lib/utils'
-import type { Service, Reputation } from '@/lib/types'
+import type { Service, Reputation, Currency } from '@/lib/types'
 
 export default function MarketplacePage() {
   const [services, setServices] = useState<Service[]>([])
@@ -14,11 +14,12 @@ export default function MarketplacePage() {
 
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('')
+  const [currency, setCurrency] = useState<Currency | ''>('')
   const [maxPrice, setMaxPrice] = useState('')
 
   useEffect(() => {
     loadServices()
-  }, [search, category, maxPrice])
+  }, [search, category, currency, maxPrice])
 
   async function loadServices() {
     try {
@@ -26,6 +27,7 @@ export default function MarketplacePage() {
       const filters: any = {}
       if (search) filters.q = search
       if (category) filters.category = category
+      if (currency) filters.currency = currency
       if (maxPrice) filters.maxPrice = Number(maxPrice)
 
       const data = await api.getServices(filters)
@@ -61,7 +63,7 @@ export default function MarketplacePage() {
 
         {/* Filters */}
         <div className="card mb-8">
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-4 gap-4">
             <div>
               <label className="label">Search</label>
               <input
@@ -88,7 +90,20 @@ export default function MarketplacePage() {
             </div>
             
             <div>
-              <label className="label">Max Price (sats)</label>
+              <label className="label">Currency</label>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as Currency | '')}
+                className="input"
+              >
+                <option value="">All currencies</option>
+                <option value="BSV">BSV</option>
+                <option value="MNEE">MNEE</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="label">Max Price</label>
               <input
                 type="number"
                 value={maxPrice}
@@ -100,11 +115,12 @@ export default function MarketplacePage() {
             </div>
           </div>
           
-          {(search || category || maxPrice) && (
+          {(search || category || currency || maxPrice) && (
             <button
               onClick={() => {
                 setSearch('')
                 setCategory('')
+                setCurrency('')
                 setMaxPrice('')
               }}
               className="mt-4 text-sm text-blue-500 hover:underline"

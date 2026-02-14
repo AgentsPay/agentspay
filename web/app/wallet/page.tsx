@@ -6,7 +6,7 @@ import { CopyButton } from '@/components/CopyButton'
 import { WalletBadge } from '@/components/WalletBadge'
 import { useToast } from '@/lib/useToast'
 import { ToastContainer } from '@/components/Toast'
-import { formatSats, formatDate, getExplorerUrl } from '@/lib/utils'
+import { formatSats, formatDate, getExplorerUrl, formatCurrency } from '@/lib/utils'
 import type { Wallet, Transaction, UTXO } from '@/lib/types'
 
 export default function WalletPage() {
@@ -58,16 +58,73 @@ export default function WalletPage() {
     }
   }
 
-  async function handleCreateWallet() {
+  async function handleConnectHandCash() {
     try {
       setLoading(true)
-      const w = await api.createWallet()
+      const { authUrl } = await api.connectHandCash()
+      window.location.href = authUrl
+    } catch (err: any) {
+      showError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleConnectYours() {
+    try {
+      setLoading(true)
+      // @ts-ignore - Yours Wallet extension API
+      if (typeof window.yours === 'undefined') {
+        throw new Error('Yours Wallet extension not found. Please install it first.')
+      }
+      // @ts-ignore
+      const pubKey = await window.yours.getPublicKey()
+      const w = await api.connectYours(pubKey)
+      const updated = [...wallets, w.id]
+      setWallets(updated)
+      localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
+      setSelectedWalletId(w.id)
+      success('Yours Wallet connected successfully!')
+    } catch (err: any) {
+      showError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleConnectInternal() {
+    try {
+      setLoading(true)
+      const w = await api.connectInternal()
       const updated = [...wallets, w.id]
       setWallets(updated)
       localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
       setNewWallet(w)
       setSelectedWalletId(w.id)
-      success('Wallet created successfully!')
+      success('Internal wallet created successfully!')
+    } catch (err: any) {
+      showError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDisconnect() {
+    if (!selectedWalletId || !wallet) return
+    
+    if (!confirm(`Disconnect wallet ${wallet.provider}? This cannot be undone.`)) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      await api.disconnectWallet(selectedWalletId)
+      const updated = wallets.filter(id => id !== selectedWalletId)
+      setWallets(updated)
+      localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
+      setSelectedWalletId(updated.length > 0 ? updated[0] : null)
+      setWallet(null)
+      success('Wallet disconnected')
     } catch (err: any) {
       showError(err.message)
     } finally {
@@ -90,6 +147,19 @@ export default function WalletPage() {
     }
   }
 
+  const getProviderBadge = (provider: string) => {
+    const colors = {
+      handcash: 'bg-green-500/10 text-green-500 border-green-500/20',
+      yours: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+      internal: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+    }
+    return (
+      <span className={`inline-block px-3 py-1 text-xs font-medium border rounded ${colors[provider as keyof typeof colors] || colors.internal}`}>
+        {provider === 'handcash' ? '🤝 HandCash' : provider === 'yours' ? '👛 Yours' : '🔐 Internal'}
+      </span>
+    )
+  }
+
   return (
     <main className="min-h-screen py-12 px-6">
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
@@ -97,23 +167,44 @@ export default function WalletPage() {
       <div className="max-w-5xl mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">Wallet Management</h1>
-          <p className="text-gray-400">Manage your BSV wallets for agent payments</p>
+          <p className="text-gray-400">Connect your BSV wallet or create a new one</p>
         </div>
 
-        {/* Create Wallet */}
+        {/* Connect Wallet Options */}
         <div className="card mb-6">
-          <h2 className="text-xl font-semibold mb-4">Create New Wallet</h2>
-          <button
-            onClick={handleCreateWallet}
-            disabled={loading}
-            className="btn btn-primary"
-          >
-            {loading ? 'Creating...' : '+ Create Wallet'}
-          </button>
+          <h2 className="text-xl font-semibold mb-4">Connect Wallet</h2>
+          <div className="grid md:grid-cols-3 gap-4">
+            <button
+              onClick={handleConnectHandCash}
+              disabled={loading}
+              className="btn btn-primary flex flex-col items-center gap-2 py-6"
+            >
+              <span className="text-2xl">🤝</span>
+              <span>Connect HandCash</span>
+            </button>
+            
+            <button
+              onClick={handleConnectYours}
+              disabled={loading}
+              className="btn btn-primary flex flex-col items-center gap-2 py-6"
+            >
+              <span className="text-2xl">👛</span>
+              <span>Connect Yours Wallet</span>
+            </button>
+            
+            <button
+              onClick={handleConnectInternal}
+              disabled={loading}
+              className="btn btn-primary flex flex-col items-center gap-2 py-6"
+            >
+              <span className="text-2xl">🔐</span>
+              <span>Create Internal Wallet</span>
+            </button>
+          </div>
         </div>
 
         {/* New Wallet Alert (one-time) */}
-        {newWallet && (
+        {newWallet && newWallet.privateKey && (
           <div className="card mb-6 bg-yellow-500/5 border-yellow-500/20">
             <div className="flex items-start gap-3 mb-4">
               <span className="text-2xl">⚠️</span>
@@ -161,8 +252,16 @@ export default function WalletPage() {
           <>
             <div className="card mb-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold">Wallet Details</h2>
-                <WalletBadge address={wallet.address} balance={wallet.balance} />
+                <div>
+                  <h2 className="text-2xl font-bold mb-2">Wallet Details</h2>
+                  {getProviderBadge(wallet.provider)}
+                </div>
+                <button
+                  onClick={handleDisconnect}
+                  className="btn btn-secondary text-sm"
+                >
+                  Disconnect
+                </button>
               </div>
 
               <div className="grid md:grid-cols-2 gap-4 mb-6">
@@ -182,30 +281,53 @@ export default function WalletPage() {
                 </div>
               </div>
 
-              {/* Fund Wallet (Demo Mode) */}
-              <div className="border-t border-[var(--border)] pt-4">
-                <label className="label">Fund Wallet (Demo Mode)</label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    value={fundAmount}
-                    onChange={(e) => setFundAmount(e.target.value)}
-                    placeholder="Amount in satoshis"
-                    className="input flex-1"
-                    min="0"
-                  />
-                  <button
-                    onClick={handleFund}
-                    disabled={loading || !fundAmount}
-                    className="btn btn-primary"
-                  >
-                    Fund
-                  </button>
+              {/* Multi-Currency Balances */}
+              {wallet.balances && (
+                <div className="border-t border-[var(--border)] pt-4 mb-4">
+                  <div className="text-sm text-gray-400 mb-2">Balances</div>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="bg-[var(--bg)] rounded-lg p-4">
+                      <div className="text-xs text-gray-500 mb-1">BSV</div>
+                      <div className="text-2xl font-bold text-green-500">
+                        {formatSats(wallet.balances.BSV)} <span className="text-sm text-gray-500">sats</span>
+                      </div>
+                    </div>
+                    <div className="bg-[var(--bg)] rounded-lg p-4">
+                      <div className="text-xs text-gray-500 mb-1">MNEE</div>
+                      <div className="text-2xl font-bold text-blue-500">
+                        {formatCurrency(wallet.balances.MNEE, 'MNEE')}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Demo mode: adds balance via internal ledger (not real BSV)
-                </p>
-              </div>
+              )}
+
+              {/* Fund Wallet (Demo Mode) - Internal wallets only */}
+              {wallet.provider === 'internal' && (
+                <div className="border-t border-[var(--border)] pt-4">
+                  <label className="label">Fund Wallet (Demo Mode)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={fundAmount}
+                      onChange={(e) => setFundAmount(e.target.value)}
+                      placeholder="Amount in satoshis"
+                      className="input flex-1"
+                      min="0"
+                    />
+                    <button
+                      onClick={handleFund}
+                      disabled={loading || !fundAmount}
+                      className="btn btn-primary"
+                    >
+                      Fund
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Demo mode: adds balance via internal ledger (not real BSV)
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Tabs */}

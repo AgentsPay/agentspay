@@ -7,7 +7,10 @@ import type {
   Reputation,
   ExecuteResult,
   ApiResponse,
-  SearchFilters
+  SearchFilters,
+  Dispute,
+  Webhook,
+  Receipt
 } from './types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100'
@@ -71,12 +74,44 @@ class AgentPayAPI {
     return data.transactions
   }
 
+  async connectHandCash(): Promise<{ authUrl: string }> {
+    const data = await this.fetch<{ ok: boolean; authUrl: string }>(
+      '/api/wallets/connect/handcash',
+      { method: 'POST' }
+    )
+    return { authUrl: data.authUrl }
+  }
+
+  async connectYours(publicKey: string): Promise<Wallet> {
+    const data = await this.fetch<{ ok: boolean; wallet: Wallet }>(
+      '/api/wallets/connect/yours',
+      {
+        method: 'POST',
+        body: JSON.stringify({ publicKey }),
+      }
+    )
+    return data.wallet
+  }
+
+  async connectInternal(): Promise<Wallet> {
+    const data = await this.fetch<{ ok: boolean; wallet: Wallet }>(
+      '/api/wallets/connect/internal',
+      { method: 'POST' }
+    )
+    return data.wallet
+  }
+
+  async disconnectWallet(id: string): Promise<void> {
+    await this.fetch(`/api/wallets/${id}`, { method: 'DELETE' })
+  }
+
   // ============ SERVICES ============
 
   async getServices(filters: SearchFilters = {}): Promise<Service[]> {
     const params = new URLSearchParams()
     if (filters.q) params.set('q', filters.q)
     if (filters.category) params.set('category', filters.category)
+    if (filters.currency) params.set('currency', filters.currency)
     if (filters.maxPrice) params.set('maxPrice', filters.maxPrice.toString())
     if (filters.limit) params.set('limit', filters.limit.toString())
     if (filters.offset) params.set('offset', filters.offset.toString())
@@ -130,11 +165,51 @@ class AgentPayAPI {
     return data.payment
   }
 
-  async disputePayment(id: string): Promise<Payment> {
-    const data = await this.fetch<{ ok: boolean; payment: Payment }>(`/api/payments/${id}/dispute`, {
+  async disputePayment(id: string, reason: string, evidence?: string): Promise<Dispute> {
+    const data = await this.fetch<{ ok: boolean; dispute: Dispute }>(`/api/payments/${id}/dispute`, {
       method: 'POST',
+      body: JSON.stringify({ reason, evidence }),
     })
-    return data.payment
+    return data.dispute
+  }
+
+  async getReceipt(paymentId: string): Promise<Receipt> {
+    const data = await this.fetch<{ ok: boolean; receipt: Receipt }>(`/api/receipts/${paymentId}`)
+    return data.receipt
+  }
+
+  // ============ DISPUTES ============
+
+  async getDisputes(walletId?: string): Promise<Dispute[]> {
+    const params = walletId ? `?walletId=${walletId}` : ''
+    const data = await this.fetch<{ ok: boolean; disputes: Dispute[] }>(`/api/disputes${params}`)
+    return data.disputes
+  }
+
+  async getDispute(id: string): Promise<Dispute> {
+    const data = await this.fetch<{ ok: boolean; dispute: Dispute }>(`/api/disputes/${id}`)
+    return data.dispute
+  }
+
+  // ============ WEBHOOKS ============
+
+  async getWebhooks(walletId: string): Promise<Webhook[]> {
+    const data = await this.fetch<{ ok: boolean; webhooks: Webhook[] }>(
+      `/api/webhooks?walletId=${walletId}`
+    )
+    return data.webhooks
+  }
+
+  async createWebhook(walletId: string, url: string, events: string[]): Promise<Webhook> {
+    const data = await this.fetch<{ ok: boolean; webhook: Webhook }>('/api/webhooks', {
+      method: 'POST',
+      body: JSON.stringify({ walletId, url, events }),
+    })
+    return data.webhook
+  }
+
+  async deleteWebhook(id: string): Promise<void> {
+    await this.fetch(`/api/webhooks/${id}`, { method: 'DELETE' })
   }
 
   // ============ REPUTATION ============

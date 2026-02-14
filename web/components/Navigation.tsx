@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: '/marketplace', label: 'Marketplace' },
   { href: '/wallet', label: 'Wallet' },
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/disputes', label: 'Disputes' },
 ]
 
 export function Navigation() {
@@ -41,14 +42,24 @@ export function Navigation() {
             })}
           </div>
           
-          <a
-            href="https://github.com/agentspay/agentspay"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            GitHub →
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href="http://localhost:3100/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              API Docs
+            </a>
+            <a
+              href="https://github.com/agentspay/agentspay"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              GitHub →
+            </a>
+          </div>
         </div>
       </div>
     </nav>

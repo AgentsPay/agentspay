@@ -7,16 +7,18 @@ import { ToastContainer } from '@/components/Toast'
 import { PaymentStatus } from '@/components/PaymentStatus'
 import { ReputationStars } from '@/components/ReputationStars'
 import { CATEGORIES } from '@/lib/utils'
-import { formatSats, formatDate } from '@/lib/utils'
-import type { Service, Reputation, Payment } from '@/lib/types'
+import { formatSats, formatDate, formatCurrency } from '@/lib/utils'
+import type { Service, Reputation, Payment, Webhook, Dispute, Receipt, Wallet } from '@/lib/types'
 
 export default function DashboardPage() {
   const [agentWalletId, setAgentWalletId] = useState('')
+  const [wallet, setWallet] = useState<Wallet | null>(null)
   const [services, setServices] = useState<Service[]>([])
   const [reputation, setReputation] = useState<Reputation | null>(null)
-  const [payments, setPayments] = useState<Payment[]>([])
+  const [webhooks, setWebhooks] = useState<Webhook[]>([])
+  const [disputes, setDisputes] = useState<Dispute[]>([])
   const [loading, setLoading] = useState(false)
-  const [view, setView] = useState<'services' | 'payments'>('services')
+  const [view, setView] = useState<'services' | 'webhooks' | 'disputes'>('services')
 
   const { toasts, success, error: showError, dismiss } = useToast()
 
@@ -26,9 +28,26 @@ export default function DashboardPage() {
     description: '',
     category: 'utility',
     price: '1000',
+    currency: 'BSV' as 'BSV' | 'MNEE',
     endpoint: '',
     method: 'POST',
+    timeoutMs: '30000',
+    disputeWindowMs: '1800000', // 30 min
   })
+
+  // Webhook Form
+  const [webhookForm, setWebhookForm] = useState({
+    url: '',
+    events: [] as string[],
+  })
+
+  const WEBHOOK_EVENTS = [
+    'payment.escrowed',
+    'payment.released',
+    'payment.refunded',
+    'payment.disputed',
+    'service.executed',
+  ]
 
   useEffect(() => {
     const stored = localStorage.getItem('agentpay_wallets')
@@ -49,12 +68,32 @@ export default function DashboardPage() {
   async function loadDashboardData() {
     try {
       setLoading(true)
-      const allServices = await api.getServices()
+      const [allServices, rep, w] = await Promise.all([
+        api.getServices(),
+        api.getReputation(agentWalletId).catch(() => null),
+        api.getWallet(agentWalletId).catch(() => null),
+      ])
+      
       const myServices = allServices.filter(s => s.agentId === agentWalletId)
       setServices(myServices)
-
-      const rep = await api.getReputation(agentWalletId)
       setReputation(rep)
+      setWallet(w)
+
+      // Load webhooks
+      try {
+        const whs = await api.getWebhooks(agentWalletId)
+        setWebhooks(whs)
+      } catch (err) {
+        // Webhooks might not be available
+      }
+
+      // Load disputes
+      try {
+        const disps = await api.getDisputes(agentWalletId)
+        setDisputes(disps)
+      } catch (err) {
+        // Disputes might not be available
+      }
     } catch (err: any) {
       showError(err.message)
     } finally {
@@ -77,8 +116,11 @@ export default function DashboardPage() {
         description: formData.description,
         category: formData.category,
         price: Number(formData.price),
+        currency: formData.currency,
         endpoint: formData.endpoint,
         method: formData.method,
+        timeoutMs: Number(formData.timeoutMs),
+        disputeWindowMs: Number(formData.disputeWindowMs),
       })
       success('Service registered successfully!')
       setFormData({
@@ -86,8 +128,11 @@ export default function DashboardPage() {
         description: '',
         category: 'utility',
         price: '1000',
+        currency: 'BSV',
         endpoint: '',
         method: 'POST',
+        timeoutMs: '30000',
+        disputeWindowMs: '1800000',
       })
       await loadDashboardData()
     } catch (err: any) {
@@ -105,6 +150,47 @@ export default function DashboardPage() {
     } catch (err: any) {
       showError(err.message)
     }
+  }
+
+  async function handleCreateWebhook(e: React.FormEvent) {
+    e.preventDefault()
+    if (!webhookForm.url || webhookForm.events.length === 0) {
+      showError('Please provide URL and at least one event')
+      return
+    }
+
+    try {
+      setLoading(true)
+      await api.createWebhook(agentWalletId, webhookForm.url, webhookForm.events)
+      success('Webhook created successfully!')
+      setWebhookForm({ url: '', events: [] })
+      await loadDashboardData()
+    } catch (err: any) {
+      showError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDeleteWebhook(id: string) {
+    if (!confirm('Delete this webhook?')) return
+
+    try {
+      await api.deleteWebhook(id)
+      success('Webhook deleted')
+      await loadDashboardData()
+    } catch (err: any) {
+      showError(err.message)
+    }
+  }
+
+  const toggleEvent = (event: string) => {
+    setWebhookForm(prev => ({
+      ...prev,
+      events: prev.events.includes(event)
+        ? prev.events.filter(e => e !== event)
+        : [...prev.events, event]
+    }))
   }
 
   if (!agentWalletId) {
@@ -136,10 +222,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Agent Info */}
-        <div className="grid md:grid-cols-3 gap-5 mb-8">
+        <div className="grid md:grid-cols-4 gap-5 mb-8">
           <div className="card">
             <div className="text-sm text-gray-400 mb-1">Agent ID</div>
-            <div className="font-mono text-sm truncate">{agentWalletId}</div>
+            <div className="font-mono text-xs truncate">{agentWalletId}</div>
           </div>
           
           {reputation && (
@@ -154,6 +240,16 @@ export default function DashboardPage() {
                 <ReputationStars successRate={reputation.successRate} size="lg" />
               </div>
             </>
+          )}
+
+          {wallet?.balances && (
+            <div className="card">
+              <div className="text-sm text-gray-400 mb-1">Balances</div>
+              <div className="text-sm">
+                <div className="text-green-500">{formatSats(wallet.balances.BSV)} sats</div>
+                <div className="text-blue-500">{formatCurrency(wallet.balances.MNEE, 'MNEE')}</div>
+              </div>
+            </div>
           )}
         </div>
 
@@ -201,9 +297,22 @@ export default function DashboardPage() {
               />
             </div>
 
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid md:grid-cols-4 gap-4">
               <div>
-                <label className="label">Price (satoshis)</label>
+                <label className="label">Currency</label>
+                <select
+                  value={formData.currency}
+                  onChange={(e) => setFormData({ ...formData, currency: e.target.value as 'BSV' | 'MNEE' })}
+                  className="input"
+                  required
+                >
+                  <option value="BSV">BSV</option>
+                  <option value="MNEE">MNEE</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Price ({formData.currency === 'BSV' ? 'sats' : 'cents'})</label>
                 <input
                   type="number"
                   value={formData.price}
@@ -214,6 +323,32 @@ export default function DashboardPage() {
                 />
               </div>
               
+              <div>
+                <label className="label">Timeout (ms)</label>
+                <input
+                  type="number"
+                  value={formData.timeoutMs}
+                  onChange={(e) => setFormData({ ...formData, timeoutMs: e.target.value })}
+                  className="input"
+                  required
+                  min="1000"
+                />
+              </div>
+              
+              <div>
+                <label className="label">Dispute Window (ms)</label>
+                <input
+                  type="number"
+                  value={formData.disputeWindowMs}
+                  onChange={(e) => setFormData({ ...formData, disputeWindowMs: e.target.value })}
+                  className="input"
+                  required
+                  min="60000"
+                />
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="label">HTTP Method</label>
                 <select
@@ -258,10 +393,16 @@ export default function DashboardPage() {
               My Services ({services.length})
             </button>
             <button
-              onClick={() => setView('payments')}
-              className={`font-semibold ${view === 'payments' ? 'text-blue-500' : 'text-gray-400'}`}
+              onClick={() => setView('webhooks')}
+              className={`font-semibold ${view === 'webhooks' ? 'text-blue-500' : 'text-gray-400'}`}
             >
-              Payments
+              Webhooks ({webhooks.length})
+            </button>
+            <button
+              onClick={() => setView('disputes')}
+              className={`font-semibold ${view === 'disputes' ? 'text-blue-500' : 'text-gray-400'}`}
+            >
+              Disputes ({disputes.length})
             </button>
           </div>
 
@@ -282,9 +423,9 @@ export default function DashboardPage() {
                         </div>
                         <div className="text-right">
                           <div className="text-lg font-bold text-green-500">
-                            {formatSats(service.price)} sats
+                            {service.currency === 'BSV' ? `${formatSats(service.price)} sats` : formatCurrency(service.price, service.currency)}
                           </div>
-                          <span className="text-xs text-gray-500">{service.category}</span>
+                          <span className="text-xs text-gray-500">{service.category} • {service.currency}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-3">
@@ -307,9 +448,116 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {view === 'payments' && (
-            <div className="text-center py-8 text-gray-400">
-              Payment history coming soon
+          {view === 'webhooks' && (
+            <div>
+              {/* Create Webhook Form */}
+              <form onSubmit={handleCreateWebhook} className="mb-6 p-4 bg-[var(--bg)] rounded-lg">
+                <h3 className="font-semibold mb-3">Add New Webhook</h3>
+                
+                <div className="mb-3">
+                  <label className="label">Webhook URL</label>
+                  <input
+                    type="url"
+                    value={webhookForm.url}
+                    onChange={(e) => setWebhookForm({ ...webhookForm, url: e.target.value })}
+                    className="input"
+                    placeholder="https://your-server.com/webhook"
+                    required
+                  />
+                </div>
+
+                <div className="mb-3">
+                  <label className="label">Events</label>
+                  <div className="space-y-2">
+                    {WEBHOOK_EVENTS.map(event => (
+                      <label key={event} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={webhookForm.events.includes(event)}
+                          onChange={() => toggleEvent(event)}
+                          className="rounded"
+                        />
+                        <span className="text-sm">{event}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <button type="submit" disabled={loading} className="btn btn-primary text-sm">
+                  Add Webhook
+                </button>
+              </form>
+
+              {/* Webhook List */}
+              {webhooks.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  No webhooks configured
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {webhooks.map(webhook => (
+                    <div key={webhook.id} className="p-4 bg-[var(--bg)] rounded-lg">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <code className="text-sm text-blue-500 break-all">{webhook.url}</code>
+                          <div className="text-xs text-gray-500 mt-1">
+                            Events: {webhook.events.join(', ')}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteWebhook(webhook.id)}
+                          className="text-xs text-red-500 hover:underline ml-3"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Created {formatDate(webhook.createdAt)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {view === 'disputes' && (
+            <div>
+              {disputes.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  No disputes found
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {disputes.map(dispute => (
+                    <div key={dispute.id} className="p-4 bg-[var(--bg)] rounded-lg">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <div className="font-semibold mb-1">{dispute.reason}</div>
+                          <div className="text-sm text-gray-400">Payment: {dispute.paymentId}</div>
+                        </div>
+                        <div className={`px-3 py-1 text-xs rounded ${
+                          dispute.status === 'open' ? 'bg-yellow-500/10 text-yellow-500' :
+                          dispute.status === 'resolved_refund' ? 'bg-red-500/10 text-red-500' :
+                          dispute.status === 'resolved_release' ? 'bg-green-500/10 text-green-500' :
+                          'bg-blue-500/10 text-blue-500'
+                        }`}>
+                          {dispute.status}
+                        </div>
+                      </div>
+                      {dispute.evidence && (
+                        <div className="text-xs text-gray-500 mt-2">
+                          Evidence: {dispute.evidence}
+                        </div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-2">
+                        Opened {formatDate(dispute.createdAt)}
+                        {dispute.resolvedAt && ` • Resolved ${formatDate(dispute.resolvedAt)}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
