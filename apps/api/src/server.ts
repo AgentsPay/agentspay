@@ -33,18 +33,16 @@ const app = express()
 app.disable('x-powered-by')
 
 // CORS configuration
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || []
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || []
 const isDemoMode = process.env.AGENTPAY_DEMO === 'true'
 
-// CORS: credentials required for httpOnly cookie auth
+// CORS: credentials required for httpOnly cookie auth (never reflect arbitrary origins)
 const corsOrigins = allowedOrigins.length > 0
   ? allowedOrigins
-  : ['http://localhost:3001', 'http://192.168.1.48:3001', 'http://0.0.0.0:3001']
+  : ['http://localhost:3000', 'http://localhost:3001']
 
 app.use(cors({
-  origin: isDemoMode && allowedOrigins.length === 0
-    ? true  // reflect request origin in dev/demo
-    : corsOrigins,
+  origin: corsOrigins,
   credentials: true,
 }))
 
