@@ -74,11 +74,35 @@ export default function WalletPage() {
     }
   }
 
-  async function handleConnect(provider: string, data?: { privateKey?: string }) {
+  async function handleConnect(provider: string, data?: { privateKey?: string; agentName?: string; capabilities?: string[] }) {
     try {
       setLoading(true)
 
-      if (provider === 'internal') {
+      if (provider === 'provision') {
+        // Agent provision: creates wallet + identity in one call
+        const agentName = data?.agentName || 'My Agent'
+        const result = await api.provisionAgent(agentName, {
+          type: 'agent',
+          capabilities: data?.capabilities || [],
+        })
+        const updated = [...wallets, result.agent.walletId]
+        setWallets(updated)
+        localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
+        setNewWallet({ id: result.agent.walletId, address: result.agent.address } as any)
+        setNewApiKey(result.agent.apiKey)
+        setNewPrivateKey(result.agent.privateKey)
+        setSelectedWalletId(result.agent.walletId)
+        setShowConnectModal(false)
+        setWizardCreds({
+          apiKey: result.agent.apiKey,
+          privateKey: result.agent.privateKey,
+          walletId: result.agent.walletId,
+          address: result.agent.address,
+          envConfig: result.envConfig,
+          quickStart: result.quickStart,
+        } as any)
+        success('Agent provisioned! Save your credentials.')
+      } else if (provider === 'internal') {
         const { wallet: w, apiKey, privateKey } = await api.connectInternal()
         const updated = [...wallets, w.id]
         setWallets(updated)

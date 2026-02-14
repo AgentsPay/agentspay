@@ -10,7 +10,7 @@ type Step = 'who' | 'wallet' | 'agent-setup' | 'credentials' | 'done'
 interface OnboardingWizardProps {
   open: boolean
   onClose: () => void
-  onConnect: (provider: string, data?: { privateKey?: string }) => Promise<void>
+  onConnect: (provider: string, data?: { privateKey?: string; agentName?: string; capabilities?: string[] }) => Promise<void>
   loading: boolean
   credentials?: { apiKey?: string; privateKey?: string; walletId?: string; address?: string } | null
 }
@@ -50,12 +50,13 @@ export function OnboardingWizard({ open, onClose, onConnect, loading, credential
     setWalletChoice(choice)
     try {
       if (choice === 'create') {
-        await onConnect('internal')
         if (userType === 'agent') {
+          // Agent flow: go to agent-setup first to get name, then provision
           setStep('agent-setup')
-        } else {
-          setStep('credentials')
+          return
         }
+        await onConnect('internal')
+        setStep('credentials')
       } else if (choice === 'yours') {
         await onConnect('yours')
         setStep(userType === 'agent' ? 'agent-setup' : 'done')
@@ -273,9 +274,9 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
           )}
 
           {/* STEP 3: Agent Setup (agent flow only) */}
-          {step === 'agent-setup' && (
+          {step === 'agent-setup' && !credentials && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-400">Configure your agent's identity on the network.</p>
+              <p className="text-sm text-gray-400">Name your agent. This creates a wallet + identity in one step.</p>
               
               <div>
                 <label className="label">Agent Name</label>
@@ -284,19 +285,49 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
                   onChange={e => setAgentName(e.target.value)}
                   placeholder="e.g., SecurityScanner-v1"
                   className="input w-full"
+                  autoFocus
                 />
               </div>
 
-              {/* Auto-generated .env config */}
-              {credentials && (
+              <button
+                onClick={async () => {
+                  try {
+                    await onConnect('provision', { agentName: agentName || 'My Agent' })
+                    setStep('agent-setup') // stay here to show .env
+                  } catch {
+                    // error handled by parent toast
+                  }
+                }}
+                disabled={loading}
+                className="btn btn-primary w-full"
+              >
+                {loading ? '⏳ Provisioning...' : '⚡ Create Agent Wallet + Identity'}
+              </button>
+
+              <button onClick={() => { setStep('wallet'); setWalletChoice(null) }} className="text-sm text-gray-500 hover:text-white">
+                ← Back
+              </button>
+            </div>
+          )}
+
+          {/* STEP 3b: Agent Setup — show .env after provision */}
+          {step === 'agent-setup' && credentials && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-green-500 text-lg">✓</span>
+                <span className="font-semibold text-green-400">Agent provisioned!</span>
+              </div>
+
+              {/* Server-generated .env config */}
+              {(credentials as any).envConfig && (
                 <div>
-                  <label className="label">Agent Configuration File</label>
+                  <label className="label">Agent .env Configuration</label>
                   <div className="relative">
-                    <pre className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre">
-                      {generateAgentConfig()}
+                    <pre className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre max-h-48 overflow-y-auto">
+                      {(credentials as any).envConfig}
                     </pre>
                     <div className="absolute top-2 right-2">
-                      <CopyButton text={generateAgentConfig()} label="Copy .env" />
+                      <CopyButton text={(credentials as any).envConfig} label="Copy .env" />
                     </div>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
@@ -309,7 +340,7 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
                 <button onClick={() => setStep('credentials')} className="btn btn-primary flex-1">
                   View Full Credentials →
                 </button>
-                <button onClick={() => { setSavedCreds(true); setStep('done') }} className="btn btn-secondary">
+                <button onClick={() => setStep('done')} className="btn btn-secondary">
                   Skip, I copied the .env
                 </button>
               </div>
