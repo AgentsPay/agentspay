@@ -31,13 +31,13 @@ export class AgentPay {
 
   async createWallet() {
     const res = await fetch(`${this.apiUrl}/api/wallets`, { method: 'POST' })
-    const data = await res.json()
+    const data = await res.json() as any
     return data.wallet
   }
 
   async getWallet(id: string) {
     const res = await fetch(`${this.apiUrl}/api/wallets/${id}`)
-    const data = await res.json()
+    const data = await res.json() as any
     return data.wallet
   }
 
@@ -55,7 +55,7 @@ export class AgentPay {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ method: 'POST', ...service }),
     })
-    const data = await res.json()
+    const data = await res.json() as any
     return data.service
   }
 
@@ -66,7 +66,7 @@ export class AgentPay {
     if (query.maxPrice) params.set('maxPrice', String(query.maxPrice))
 
     const res = await fetch(`${this.apiUrl}/api/services?${params}`)
-    const data = await res.json()
+    const data = await res.json() as any
     return data.services
   }
 
@@ -81,7 +81,7 @@ export class AgentPay {
 
   async getReputation(agentId: string) {
     const res = await fetch(`${this.apiUrl}/api/agents/${agentId}/reputation`)
-    const data = await res.json()
+    const data = await res.json() as any
     return data.reputation
   }
 }

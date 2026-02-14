@@ -1,0 +1,13 @@
+src/
+demo/
+data/
+docs/
+*.ts
+!dist/**/*.d.ts
+tsconfig.json
+.gitignore
+*.db
+*.db-shm
+*.db-wal
+*.log
+.env

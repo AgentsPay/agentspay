@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
-const __filename2 = typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url)
+const __filename2 = __filename
 const __dirname2 = path.dirname(__filename2)
 const DB_PATH = process.env.AGENTPAY_DB || path.join(__dirname2, '../../data/agentpay.db')
 
