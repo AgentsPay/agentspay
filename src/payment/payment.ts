@@ -3,7 +3,7 @@ import { getDb } from '../registry/db'
 import { PLATFORM_FEE_RATE } from '../types'
 import type { Payment } from '../types'
 import { WalletManager } from '../wallet/wallet'
-import { buildTransaction, privateKeyFromWif, getTxId } from '../bsv/crypto'
+import { buildTransaction, privateKeyFromWif, getTxId, generatePrivateKey, deriveAddress } from '../bsv/crypto'
 import { broadcastTx } from '../bsv/whatsonchain'
 import { config } from '../config'
 
@@ -244,13 +244,11 @@ export class PaymentEngine {
     if (config.platformWallet.address) return config.platformWallet.address
 
     if (config.platformWallet.privateKey) {
-      const { deriveAddress, privateKeyFromWif } = require('../bsv/crypto')
       const priv = privateKeyFromWif(config.platformWallet.privateKey)
       return deriveAddress(priv)
     }
 
     // Dev fallback: ephemeral random address
-    const { generatePrivateKey, deriveAddress } = require('../bsv/crypto')
     const privKey = generatePrivateKey()
     return deriveAddress(privKey)
   }
@@ -263,7 +261,6 @@ export class PaymentEngine {
 
     // For dev/testing only - generate ephemeral key (will NOT match escrow address across calls)
     console.warn('⚠️  Using ephemeral platform key - NOT FOR PRODUCTION')
-    const { generatePrivateKey } = require('../bsv/crypto')
     const privKey = generatePrivateKey()
     return privKey.toWif()
   }

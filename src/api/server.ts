@@ -235,5 +235,5 @@ export function startServer() {
 
 export { app }
 
-// Uncomment to auto-start:
-// startServer()
+// Auto-start server
+startServer()
