@@ -33,55 +33,47 @@ export class PaymentEngine {
     const platformFee = Math.ceil(amount * PLATFORM_FEE_RATE)
     const now = new Date().toISOString()
 
-    // Get buyer wallet
+    if (config.demoMode) {
+      // Demo mode: internal ledger, no on-chain tx
+      db.prepare(`
+        INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status, escrowTxId, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
+      `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, `demo-${id.slice(0,8)}`, now)
+
+      return {
+        id, serviceId, buyerWalletId, sellerWalletId,
+        amount, platformFee, status: 'escrowed',
+        txId: `demo-${id.slice(0,8)}`,
+        createdAt: now,
+      }
+    }
+
+    // On-chain mode
     const buyerWallet = this.wallets.getById(buyerWalletId)
     if (!buyerWallet) throw new Error('Buyer wallet not found')
 
-    // Get buyer's private key
     const buyerPrivKeyWif = this.wallets.getPrivateKey(buyerWalletId)
     if (!buyerPrivKeyWif) throw new Error('Cannot access buyer private key')
 
     const buyerPrivKey = privateKeyFromWif(buyerPrivKeyWif)
-
-    // Get buyer's UTXOs
     const utxos = await this.wallets.getUtxos(buyerWalletId)
-    if (utxos.length === 0) {
-      throw new Error('No UTXOs available. Please fund your wallet.')
-    }
+    if (utxos.length === 0) throw new Error('No UTXOs available. Please fund your wallet.')
 
-    // Calculate total available
     const totalAvailable = utxos.reduce((sum, utxo) => sum + utxo.amount, 0)
-    if (totalAvailable < amount) {
-      throw new Error(`Insufficient funds. Need ${amount} sats, have ${totalAvailable} sats`)
-    }
+    if (totalAvailable < amount) throw new Error(`Insufficient funds. Need ${amount} sats, have ${totalAvailable} sats`)
 
-    // Get platform escrow address (for MVP, we use a platform-controlled wallet)
     const platformAddress = this.getPlatformEscrowAddress()
 
-    // Build transaction: buyer → platform escrow
     try {
-      const txHex = buildTransaction(
-        utxos,
-        [{ address: platformAddress, amount }],
-        buyerWallet.address, // change back to buyer
-        buyerPrivKey
-      )
-
-      // Broadcast transaction
+      const txHex = buildTransaction(utxos, [{ address: platformAddress, amount }], buyerWallet.address, buyerPrivKey)
       const txId = await broadcastTx(txHex)
 
-      // Store payment with escrow txId
       db.prepare(`
         INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status, escrowTxId, createdAt)
         VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
       `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, txId, now)
 
-      return {
-        id, serviceId, buyerWalletId, sellerWalletId,
-        amount, platformFee, status: 'escrowed', 
-        txId: txId,
-        createdAt: now,
-      }
+      return { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status: 'escrowed', txId, createdAt: now }
     } catch (error: any) {
       throw new Error(`Failed to create escrow transaction: ${error.message}`)
     }
@@ -94,52 +86,32 @@ export class PaymentEngine {
   async release(paymentId: string): Promise<Payment | null> {
     const db = getDb()
     const payment = this.getById(paymentId)
-    
-    if (!payment || payment.status !== 'escrowed') {
-      return null
+    if (!payment || payment.status !== 'escrowed') return null
+
+    const now = new Date().toISOString()
+
+    if (config.demoMode) {
+      db.prepare(`UPDATE payments SET status = 'released', releaseTxId = ?, completedAt = ? WHERE id = ?`)
+        .run(`demo-release-${paymentId.slice(0,8)}`, now, paymentId)
+      return this.getById(paymentId)
     }
 
     const sellerWallet = this.wallets.getById(payment.sellerWalletId)
-    if (!sellerWallet) {
-      throw new Error('Seller wallet not found')
-    }
+    if (!sellerWallet) throw new Error('Seller wallet not found')
 
     try {
-      // Get platform wallet private key
-      const platformPrivKeyWif = this.getPlatformPrivateKey()
-      const platformPrivKey = privateKeyFromWif(platformPrivKeyWif)
+      const platformPrivKey = privateKeyFromWif(this.getPlatformPrivateKey())
       const platformAddress = this.getPlatformEscrowAddress()
-
-      // Get platform UTXOs (should include the escrow tx)
       const platformWallet = this.getOrCreatePlatformWallet()
       const utxos = await this.wallets.getUtxos(platformWallet.id)
+      if (utxos.length === 0) throw new Error('Platform wallet has no UTXOs')
 
-      if (utxos.length === 0) {
-        throw new Error('Platform wallet has no UTXOs')
-      }
-
-      // Calculate seller payout (amount - platform fee)
       const sellerPayout = payment.amount - payment.platformFee
-
-      // Build transaction: platform → seller
-      const txHex = buildTransaction(
-        utxos,
-        [{ address: sellerWallet.address, amount: sellerPayout }],
-        platformAddress, // change back to platform
-        platformPrivKey
-      )
-
-      // Broadcast transaction
+      const txHex = buildTransaction(utxos, [{ address: sellerWallet.address, amount: sellerPayout }], platformAddress, platformPrivKey)
       const releaseTxId = await broadcastTx(txHex)
 
-      // Update payment status
-      const now = new Date().toISOString()
-      db.prepare(`
-        UPDATE payments 
-        SET status = 'released', releaseTxId = ?, completedAt = ?
-        WHERE id = ?
-      `).run(releaseTxId, now, paymentId)
-
+      db.prepare(`UPDATE payments SET status = 'released', releaseTxId = ?, completedAt = ? WHERE id = ?`)
+        .run(releaseTxId, now, paymentId)
       return this.getById(paymentId)
     } catch (error: any) {
       console.error('Failed to release payment:', error)
@@ -154,49 +126,31 @@ export class PaymentEngine {
   async refund(paymentId: string): Promise<Payment | null> {
     const db = getDb()
     const payment = this.getById(paymentId)
-    
-    if (!payment || payment.status !== 'escrowed') {
-      return null
+    if (!payment || payment.status !== 'escrowed') return null
+
+    const now = new Date().toISOString()
+
+    if (config.demoMode) {
+      db.prepare(`UPDATE payments SET status = 'refunded', releaseTxId = ?, completedAt = ? WHERE id = ?`)
+        .run(`demo-refund-${paymentId.slice(0,8)}`, now, paymentId)
+      return this.getById(paymentId)
     }
 
     const buyerWallet = this.wallets.getById(payment.buyerWalletId)
-    if (!buyerWallet) {
-      throw new Error('Buyer wallet not found')
-    }
+    if (!buyerWallet) throw new Error('Buyer wallet not found')
 
     try {
-      // Get platform wallet private key
-      const platformPrivKeyWif = this.getPlatformPrivateKey()
-      const platformPrivKey = privateKeyFromWif(platformPrivKeyWif)
+      const platformPrivKey = privateKeyFromWif(this.getPlatformPrivateKey())
       const platformAddress = this.getPlatformEscrowAddress()
-
-      // Get platform UTXOs
       const platformWallet = this.getOrCreatePlatformWallet()
       const utxos = await this.wallets.getUtxos(platformWallet.id)
+      if (utxos.length === 0) throw new Error('Platform wallet has no UTXOs')
 
-      if (utxos.length === 0) {
-        throw new Error('Platform wallet has no UTXOs')
-      }
-
-      // Build transaction: platform → buyer (full refund)
-      const txHex = buildTransaction(
-        utxos,
-        [{ address: buyerWallet.address, amount: payment.amount }],
-        platformAddress,
-        platformPrivKey
-      )
-
-      // Broadcast transaction
+      const txHex = buildTransaction(utxos, [{ address: buyerWallet.address, amount: payment.amount }], platformAddress, platformPrivKey)
       const refundTxId = await broadcastTx(txHex)
 
-      // Update payment status
-      const now = new Date().toISOString()
-      db.prepare(`
-        UPDATE payments 
-        SET status = 'refunded', releaseTxId = ?, completedAt = ?
-        WHERE id = ?
-      `).run(refundTxId, now, paymentId)
-
+      db.prepare(`UPDATE payments SET status = 'refunded', releaseTxId = ?, completedAt = ? WHERE id = ?`)
+        .run(refundTxId, now, paymentId)
       return this.getById(paymentId)
     } catch (error: any) {
       console.error('Failed to refund payment:', error)

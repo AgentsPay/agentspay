@@ -1,9 +1,12 @@
 import express from 'express'
+import cors from 'cors'
 import { WalletManager } from '../wallet/wallet'
 import { Registry } from '../registry/registry'
 import { PaymentEngine } from '../payment/payment'
+import { getDb } from '../registry/db'
 
 const app = express()
+app.use(cors())
 app.use(express.json())
 
 const wallets = new WalletManager()
@@ -198,24 +201,17 @@ app.post('/api/wallets/:id/fund', async (req, res) => {
   const wallet = wallets.getById(req.params.id)
   if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
 
-  // For testnet: document that user should use a faucet
-  const { config: appConfig } = await import('../config')
-  if (appConfig.network === 'testnet') {
-    res.json({
-      ok: false,
-      message: 'Please fund your wallet using a BSV testnet faucet',
-      address: wallet.address,
-      faucets: [
-        'https://faucet.satoshisvision.network/',
-        'https://testnet.satoshisvision.network/faucet',
-      ],
-    })
-  } else {
-    res.status(400).json({
-      error: 'Funding endpoint only available on testnet. Send BSV to the wallet address.',
-      address: wallet.address,
-    })
-  }
+  // Credit balance via internal deposits table (for demo/testnet)
+  const db = getDb()
+  db.exec(`CREATE TABLE IF NOT EXISTS deposits (
+    id TEXT PRIMARY KEY, walletId TEXT NOT NULL, amount INTEGER NOT NULL, createdAt TEXT NOT NULL
+  )`)
+  const { v4: uuidv4 } = await import('uuid')
+  db.prepare(`INSERT INTO deposits (id, walletId, amount, createdAt) VALUES (?, ?, ?, datetime('now'))`)
+    .run(uuidv4(), req.params.id, amount)
+
+  const balance = await wallets.getBalance(req.params.id)
+  res.json({ ok: true, funded: amount, balance, mode: 'internal-ledger' })
 })
 
 // ============ HEALTH ============

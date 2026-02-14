@@ -76,29 +76,17 @@ async function demo() {
   }
   console.log()
 
-  // --- Step 5: Fund consumer wallet (testnet faucet) ---
-  console.log('🪙 Step 5: Consumer needs to fund wallet via testnet faucet...')
-  console.log(`   Consumer address: ${consumerWallet.wallet.address}`)
-  console.log(`   Fund at: https://faucet.satoshisvision.network/`)
-  console.log(`   (For demo, we'll check if balance > 0 before proceeding)\n`)
+  // --- Step 5: Fund consumer wallet (internal ledger for demo) ---
+  console.log('🪙 Step 5: Funding consumer wallet (internal ledger)...')
+  const funding = await fetch(`${API}/api/wallets/${consumerWallet.wallet.id}/fund`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount: 100000 }), // 100k sats
+  }).then(r => r.json())
+  console.log(`   Funded: 100,000 sats | Balance: ${funding.balance} sats`)
+  console.log(`   Mode: ${funding.mode} (use real BSV for production)\n`)
   
-  // Check balance
-  let consumerBalance = 0
-  try {
-    const balanceCheck = await fetch(`${API}/api/wallets/${consumerWallet.wallet.id}`).then(r => r.json())
-    consumerBalance = balanceCheck.wallet.balance || 0
-    console.log(`   Current balance: ${consumerBalance} sats`)
-  } catch {
-    console.log(`   ⚠️  Could not fetch balance (network might be unavailable)`)
-  }
-
-  if (consumerBalance === 0) {
-    console.log(`\n   ⚠️  Wallet has 0 balance. For a real demo:`)
-    console.log(`   1. Send testnet BSV to: ${consumerWallet.wallet.address}`)
-    console.log(`   2. Wait for confirmation`)
-    console.log(`   3. Re-run this demo`)
-    console.log(`\n   Skipping execution step...\n`)
-  }
+  const consumerBalance = funding.balance || 0
 
   // --- Step 6: Consumer executes (pays + uses) service ---
   if (consumerBalance >= service.service.price) {

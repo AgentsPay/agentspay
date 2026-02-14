@@ -10,6 +10,7 @@ import {
   privateKeyFromWif,
 } from '../bsv/crypto'
 import { getBalance as getOnChainBalance, getUtxos, getTxOutScript } from '../bsv/whatsonchain'
+import { config } from '../config'
 import type { UTXO } from '../bsv/crypto'
 
 /**
@@ -84,12 +85,15 @@ export class WalletManager {
     const wallet = this.getById(walletId)
     if (!wallet) return 0
 
+    if (config.demoMode) {
+      return this.getInternalBalance(walletId)
+    }
+
     try {
       const balance = await getOnChainBalance(wallet.address)
       return balance.confirmed + balance.unconfirmed
     } catch (error) {
       console.error(`Failed to fetch balance for ${wallet.address}:`, error)
-      // Fallback to internal ledger (legacy for testing)
       return this.getInternalBalance(walletId)
     }
   }

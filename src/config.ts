@@ -24,6 +24,10 @@ export const config = {
   // Escrow mode: 'platform' (centralized) | 'multisig' (future)
   escrowMode: 'platform' as 'platform' | 'multisig',
 
+  // Demo mode: use internal ledger instead of on-chain transactions
+  // Set AGENTPAY_DEMO=true for local testing without real BSV
+  demoMode: process.env.AGENTPAY_DEMO === 'true' || process.env.AGENTPAY_DEMO === '1',
+
   // Minimum transaction fee (satoshis/byte)
   feePerByte: 1,
 

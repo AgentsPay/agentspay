@@ -51,7 +51,9 @@
   },
   "dependencies": {
     "@bsv/sdk": "^2.0.3",
+    "@types/cors": "^2.8.19",
     "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.6",
     "express": "^5.2.1",
     "uuid": "^13.0.0"
   },

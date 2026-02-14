@@ -6,7 +6,7 @@
 
 import { PrivateKey, PublicKey, P2PKH, Transaction, ARC } from '@bsv/sdk'
 import crypto from 'crypto'
-import { config, getAddressPrefix } from '../config'
+import { config } from '../config'
 
 /**
  * Generate a new BSV private key
@@ -20,8 +20,9 @@ export function generatePrivateKey(): PrivateKey {
  */
 export function deriveAddress(privateKey: PrivateKey): string {
   const publicKey = privateKey.toPublicKey()
-  const address = publicKey.toAddress()
-  return address
+  return config.network === 'testnet' 
+    ? publicKey.toAddress('testnet') 
+    : publicKey.toAddress()
 }
 
 /**
