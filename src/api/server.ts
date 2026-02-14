@@ -10,6 +10,8 @@ import { WebhookManager } from '../webhooks/webhook'
 import { webhookDelivery } from '../webhooks/delivery'
 import { DisputeManager } from '../disputes/dispute'
 import { setupSwagger } from '../docs/swagger'
+import { mneeTokens } from '../bsv/mnee'
+import { CurrencyManager } from '../currency/currency'
 import { VerificationManager } from '../verification/verification'
 
 const app = express()
@@ -135,7 +137,67 @@ app.get('/api/wallets/:id', requireApiKey, requireWalletMatch, async (req, res) 
   const wallet = wallets.getById(String(req.params.id))
   if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
   const balance = await wallets.getBalance(String(req.params.id))
-  res.json({ ok: true, wallet: { ...wallet, balance } })
+  const balanceMnee = await mneeTokens.getBalance(wallet.address)
+  res.json({ 
+    ok: true, 
+    wallet: { 
+      ...wallet, 
+      balance,
+      balanceBsv: balance,
+      balanceMnee,
+      balances: {
+        BSV: { amount: balance, formatted: CurrencyManager.format(balance, 'BSV') },
+        MNEE: { amount: balanceMnee, formatted: CurrencyManager.format(balanceMnee, 'MNEE') }
+      }
+    } 
+  })
+})
+
+// ============ CURRENCY ============
+
+app.get('/api/rates', async (_req, res) => {
+  try {
+    const bsvToMnee = await CurrencyManager.getConversionRate('BSV', 'MNEE')
+    const mneeToBsv = await CurrencyManager.getConversionRate('MNEE', 'BSV')
+    res.json({
+      ok: true,
+      rates: {
+        BSV_to_MNEE: bsvToMnee,
+        MNEE_to_BSV: mneeToBsv
+      },
+      currencies: {
+        BSV: CurrencyManager.getConfig('BSV'),
+        MNEE: CurrencyManager.getConfig('MNEE')
+      }
+    })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/wallets/:id/fund-mnee', requireApiKey, requireWalletMatch, async (req, res) => {
+  try {
+    const { amount } = req.body
+    const wallet = wallets.getById(String(req.params.id))
+    if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
+    
+    const amountCents = Number(amount)
+    if (!Number.isInteger(amountCents) || amountCents <= 0) {
+      throw new Error('Invalid amount (must be positive integer in cents)')
+    }
+    
+    await mneeTokens.fundDemo(wallet.address, amountCents)
+    const newBalance = await mneeTokens.getBalance(wallet.address)
+    
+    res.json({
+      ok: true,
+      message: `Funded ${amountCents} MNEE cents ($${(amountCents/100).toFixed(2)})`,
+      balance: newBalance,
+      balanceFormatted: CurrencyManager.format(newBalance, 'MNEE')
+    })
+  } catch (e: any) {
+    res.status(400).json({ error: e.message })
+  }
 })
 
 // ============ SERVICES (Registry) ============
@@ -156,9 +218,14 @@ app.post('/api/services', requireApiKey, (req, res) => {
     const price = Number(req.body?.price)
     if (!Number.isInteger(price) || price <= 0 || price > 100000000) throw new Error('Invalid price')
 
+    const currency = req.body?.currency || 'BSV'
+    if (currency !== 'BSV' && currency !== 'MNEE') {
+      throw new Error('Invalid currency. Must be BSV or MNEE')
+    }
+
     validateServiceEndpoint(String(req.body?.endpoint))
 
-    const service = registry.register(req.body)
+    const service = registry.register({ ...req.body, currency })
     res.json({ ok: true, service })
   } catch (e: any) {
     res.status(400).json({ error: e.message })
@@ -222,19 +289,30 @@ app.post('/api/execute/:serviceId', async (req, res) => {
   const buyer = wallets.getById(buyerWalletId)
   if (!buyer) return res.status(404).json({ error: 'Buyer wallet not found' })
 
-  // Check balance
-  const balance = await wallets.getBalance(buyerWalletId)
+  const currency = service.currency || 'BSV'
+
+  // Check balance based on currency
+  let balance = 0
+  if (currency === 'BSV') {
+    balance = await wallets.getBalance(buyerWalletId)
+  } else if (currency === 'MNEE') {
+    balance = await mneeTokens.getBalance(buyer.address)
+  }
+
   if (balance < service.price) {
     return res.status(402).json({
-      error: 'Insufficient funds',
+      error: `Insufficient ${currency} balance`,
       required: service.price,
+      requiredFormatted: CurrencyManager.format(service.price, currency),
       available: balance,
+      availableFormatted: CurrencyManager.format(balance, currency),
+      currency,
       address: buyer.address,
     })
   }
 
   try {
-    const payment = await payments.create(service.id, buyerWalletId, service.agentId, service.price)
+    const payment = await payments.create(service.id, buyerWalletId, service.agentId, service.price, currency)
 
     const startTime = Date.now()
     const timeoutMs = (service.timeout || 30) * 1000
@@ -297,8 +375,10 @@ app.post('/api/execute/:serviceId', async (req, res) => {
         executionTimeMs,
         cost: {
           amount: service.price,
+          amountFormatted: CurrencyManager.format(service.price, currency),
           platformFee: payment.platformFee,
-          currency: 'satoshis',
+          platformFeeFormatted: CurrencyManager.format(payment.platformFee, currency),
+          currency,
         },
         txId: payment.txId,
         disputeWindowMinutes: service.disputeWindow || 30,

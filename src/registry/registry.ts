@@ -12,20 +12,21 @@ export class Registry {
 
     const timeout = service.timeout || 30
     const disputeWindow = service.disputeWindow || 30
+    const currency = service.currency || 'BSV'
 
     db.prepare(`
-      INSERT INTO services (id, agentId, name, description, category, price, endpoint, method, inputSchema, outputSchema, active, timeout, disputeWindow, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+      INSERT INTO services (id, agentId, name, description, category, price, currency, endpoint, method, inputSchema, outputSchema, active, timeout, disputeWindow, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
     `).run(
       id, service.agentId, service.name, service.description, service.category,
-      service.price, service.endpoint, service.method,
+      service.price, currency, service.endpoint, service.method,
       service.inputSchema ? JSON.stringify(service.inputSchema) : null,
       service.outputSchema ? JSON.stringify(service.outputSchema) : null,
       timeout, disputeWindow,
       now, now
     )
 
-    const registeredService = { ...service, id, active: true, timeout, disputeWindow, createdAt: now, updatedAt: now }
+    const registeredService = { ...service, id, active: true, currency, timeout, disputeWindow, createdAt: now, updatedAt: now }
     
     // Trigger webhook
     webhookDelivery.trigger('service.registered', registeredService).catch(console.error)
@@ -73,7 +74,7 @@ export class Registry {
   }
 
   // Update service
-  update(id: string, updates: Partial<Pick<Service, 'name' | 'description' | 'price' | 'endpoint' | 'active' | 'timeout' | 'disputeWindow'>>): Service | null {
+  update(id: string, updates: Partial<Pick<Service, 'name' | 'description' | 'price' | 'currency' | 'endpoint' | 'active' | 'timeout' | 'disputeWindow'>>): Service | null {
     const db = getDb()
     const fields: string[] = ['updatedAt = ?']
     const params: any[] = [new Date().toISOString()]
@@ -123,6 +124,7 @@ export class Registry {
     return {
       ...row,
       active: !!row.active,
+      currency: row.currency || 'BSV',
       inputSchema: row.inputSchema ? JSON.parse(row.inputSchema) : undefined,
       outputSchema: row.outputSchema ? JSON.parse(row.outputSchema) : undefined,
     }

@@ -37,25 +37,24 @@ export class PaymentEngine {
   async create(serviceId: string, buyerWalletId: string, sellerWalletId: string, amount: number, currency: Currency = 'BSV'): Promise<Payment> {
     const db = getDb()
     const id = uuid()
-    const platformFee = Math.ceil(amount * PLATFORM_FEE_RATE)
+    const platformFee = CurrencyManager.calculateFee(amount, currency)
     const now = new Date().toISOString()
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw new Error('Invalid amount')
+    if (!CurrencyManager.validateAmount(amount, currency)) {
+      throw new Error(`Invalid ${currency} amount`)
     }
 
     if (config.demoMode) {
       // Demo mode: internal ledger, no on-chain tx
       db.prepare(`
-        INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status, escrowTxId, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
-      `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, `demo-${id.slice(0,8)}`, now)
+        INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, currency, status, escrowTxId, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
+      `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, currency, `demo-${currency}-${id.slice(0,8)}`, now)
 
       const payment: Payment = {
         id, serviceId, buyerWalletId, sellerWalletId,
-        amount, platformFee, status: 'escrowed',
-        currency: 'BSV',
-        txId: `demo-${id.slice(0,8)}`,
+        amount, platformFee, currency, status: 'escrowed',
+        txId: `demo-${currency}-${id.slice(0,8)}`,
         createdAt: now,
       }
 
@@ -66,7 +65,29 @@ export class PaymentEngine {
       return payment
     }
 
-    // On-chain mode
+    // On-chain mode - handle BSV or MNEE
+    if (currency === 'BSV') {
+      return this.createBsvPayment(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, now)
+    } else if (currency === 'MNEE') {
+      return this.createMneePayment(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, now)
+    } else {
+      throw new Error(`Unsupported currency: ${currency}`)
+    }
+  }
+
+  /**
+   * Create BSV payment (on-chain)
+   */
+  private async createBsvPayment(
+    id: string,
+    serviceId: string,
+    buyerWalletId: string,
+    sellerWalletId: string,
+    amount: number,
+    platformFee: number,
+    now: string
+  ): Promise<Payment> {
+    const db = getDb()
     const buyerWallet = this.wallets.getById(buyerWalletId)
     if (!buyerWallet) throw new Error('Buyer wallet not found')
 
@@ -78,7 +99,7 @@ export class PaymentEngine {
     if (utxos.length === 0) throw new Error('No UTXOs available. Please fund your wallet.')
 
     const totalAvailable = utxos.reduce((sum, utxo) => sum + utxo.amount, 0)
-    if (totalAvailable < amount) throw new Error(`Insufficient funds. Need ${amount} sats, have ${totalAvailable} sats`)
+    if (totalAvailable < amount) throw new Error(`Insufficient BSV. Need ${amount} sats, have ${totalAvailable} sats`)
 
     const platformAddress = this.getPlatformEscrowAddress()
 
@@ -87,19 +108,66 @@ export class PaymentEngine {
       const txId = await broadcastTx(txHex)
 
       db.prepare(`
-        INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status, escrowTxId, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
+        INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, currency, status, escrowTxId, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, 'BSV', 'escrowed', ?, ?)
       `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, txId, now)
 
       const payment: Payment = { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, currency: 'BSV', status: 'escrowed', txId, createdAt: now }
 
-      // Trigger webhooks
       webhookDelivery.trigger('payment.created', payment).catch(console.error)
       webhookDelivery.trigger('payment.escrowed', payment).catch(console.error)
 
       return payment
     } catch (error: any) {
-      throw new Error(`Failed to create escrow transaction: ${error.message}`)
+      throw new Error(`Failed to create BSV escrow transaction: ${error.message}`)
+    }
+  }
+
+  /**
+   * Create MNEE payment (token transfer)
+   */
+  private async createMneePayment(
+    id: string,
+    serviceId: string,
+    buyerWalletId: string,
+    sellerWalletId: string,
+    amount: number,
+    platformFee: number,
+    now: string
+  ): Promise<Payment> {
+    const db = getDb()
+    const buyerWallet = this.wallets.getById(buyerWalletId)
+    if (!buyerWallet) throw new Error('Buyer wallet not found')
+
+    const buyerPrivKeyWif = this.wallets.getPrivateKey(buyerWalletId)
+    if (!buyerPrivKeyWif) throw new Error('Cannot access buyer private key')
+
+    // Check MNEE balance
+    const mneeBalance = await mneeTokens.getBalance(buyerWallet.address)
+    if (mneeBalance < amount) {
+      throw new Error(`Insufficient MNEE balance. Need ${amount} cents ($${(amount/100).toFixed(2)}), have ${mneeBalance} cents ($${(mneeBalance/100).toFixed(2)})`)
+    }
+
+    // Get platform escrow address for MNEE
+    const platformAddress = this.getPlatformEscrowAddress()
+
+    try {
+      // Transfer MNEE tokens to platform escrow
+      const result = await mneeTokens.transfer(buyerWallet.address, platformAddress, amount, buyerPrivKeyWif)
+
+      db.prepare(`
+        INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, currency, status, escrowTxId, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, 'MNEE', 'escrowed', ?, ?)
+      `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, result.txid, now)
+
+      const payment: Payment = { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, currency: 'MNEE', status: 'escrowed', txId: result.txid, createdAt: now }
+
+      webhookDelivery.trigger('payment.created', payment).catch(console.error)
+      webhookDelivery.trigger('payment.escrowed', payment).catch(console.error)
+
+      return payment
+    } catch (error: any) {
+      throw new Error(`Failed to create MNEE escrow: ${error.message}`)
     }
   }
 
@@ -119,7 +187,7 @@ export class PaymentEngine {
 
     if (config.demoMode) {
       db.prepare(`UPDATE payments SET status = 'released', releaseTxId = ?, completedAt = ? WHERE id = ?`)
-        .run(`demo-release-${paymentId.slice(0,8)}`, now, paymentId)
+        .run(`demo-release-${payment.currency}-${paymentId.slice(0,8)}`, now, paymentId)
       const updatedPayment = this.getById(paymentId)
       if (updatedPayment) {
         webhookDelivery.trigger('payment.completed', updatedPayment).catch(console.error)
@@ -127,6 +195,21 @@ export class PaymentEngine {
       return updatedPayment
     }
 
+    // On-chain release - handle BSV or MNEE
+    if (payment.currency === 'BSV') {
+      return this.releaseBsvPayment(payment, now)
+    } else if (payment.currency === 'MNEE') {
+      return this.releaseMneePayment(payment, now)
+    } else {
+      throw new Error(`Unsupported currency: ${payment.currency}`)
+    }
+  }
+
+  /**
+   * Release BSV payment
+   */
+  private async releaseBsvPayment(payment: Payment, now: string): Promise<Payment | null> {
+    const db = getDb()
     const sellerWallet = this.wallets.getById(payment.sellerWalletId)
     if (!sellerWallet) throw new Error('Seller wallet not found')
 
@@ -141,15 +224,43 @@ export class PaymentEngine {
       const releaseTxId = await broadcastTx(txHex)
 
       db.prepare(`UPDATE payments SET status = 'released', releaseTxId = ?, completedAt = ? WHERE id = ?`)
-        .run(releaseTxId, now, paymentId)
-      const updatedPayment = this.getById(paymentId)
+        .run(releaseTxId, now, payment.id)
+      const updatedPayment = this.getById(payment.id)
       if (updatedPayment) {
         webhookDelivery.trigger('payment.completed', updatedPayment).catch(console.error)
       }
       return updatedPayment
     } catch (error: any) {
-      console.error('Failed to release payment:', error)
-      throw new Error(`Failed to release payment: ${error.message}`)
+      console.error('Failed to release BSV payment:', error)
+      throw new Error(`Failed to release BSV payment: ${error.message}`)
+    }
+  }
+
+  /**
+   * Release MNEE payment
+   */
+  private async releaseMneePayment(payment: Payment, now: string): Promise<Payment | null> {
+    const db = getDb()
+    const sellerWallet = this.wallets.getById(payment.sellerWalletId)
+    if (!sellerWallet) throw new Error('Seller wallet not found')
+
+    const platformAddress = this.getPlatformEscrowAddress()
+    const platformPrivKey = this.getPlatformPrivateKey()
+
+    try {
+      const sellerPayout = payment.amount - payment.platformFee
+      const result = await mneeTokens.transfer(platformAddress, sellerWallet.address, sellerPayout, platformPrivKey)
+
+      db.prepare(`UPDATE payments SET status = 'released', releaseTxId = ?, completedAt = ? WHERE id = ?`)
+        .run(result.txid, now, payment.id)
+      const updatedPayment = this.getById(payment.id)
+      if (updatedPayment) {
+        webhookDelivery.trigger('payment.completed', updatedPayment).catch(console.error)
+      }
+      return updatedPayment
+    } catch (error: any) {
+      console.error('Failed to release MNEE payment:', error)
+      throw new Error(`Failed to release MNEE payment: ${error.message}`)
     }
   }
 
@@ -169,7 +280,7 @@ export class PaymentEngine {
 
     if (config.demoMode) {
       db.prepare(`UPDATE payments SET status = 'refunded', releaseTxId = ?, completedAt = ? WHERE id = ?`)
-        .run(`demo-refund-${paymentId.slice(0,8)}`, now, paymentId)
+        .run(`demo-refund-${payment.currency}-${paymentId.slice(0,8)}`, now, paymentId)
       const updatedPayment = this.getById(paymentId)
       if (updatedPayment) {
         webhookDelivery.trigger('payment.failed', updatedPayment).catch(console.error)
@@ -178,6 +289,21 @@ export class PaymentEngine {
       return updatedPayment
     }
 
+    // On-chain refund - handle BSV or MNEE
+    if (payment.currency === 'BSV') {
+      return this.refundBsvPayment(payment, now)
+    } else if (payment.currency === 'MNEE') {
+      return this.refundMneePayment(payment, now)
+    } else {
+      throw new Error(`Unsupported currency: ${payment.currency}`)
+    }
+  }
+
+  /**
+   * Refund BSV payment
+   */
+  private async refundBsvPayment(payment: Payment, now: string): Promise<Payment | null> {
+    const db = getDb()
     const buyerWallet = this.wallets.getById(payment.buyerWalletId)
     if (!buyerWallet) throw new Error('Buyer wallet not found')
 
@@ -191,16 +317,44 @@ export class PaymentEngine {
       const refundTxId = await broadcastTx(txHex)
 
       db.prepare(`UPDATE payments SET status = 'refunded', releaseTxId = ?, completedAt = ? WHERE id = ?`)
-        .run(refundTxId, now, paymentId)
-      const updatedPayment = this.getById(paymentId)
+        .run(refundTxId, now, payment.id)
+      const updatedPayment = this.getById(payment.id)
       if (updatedPayment) {
         webhookDelivery.trigger('payment.failed', updatedPayment).catch(console.error)
         webhookDelivery.trigger('payment.refunded', updatedPayment).catch(console.error)
       }
       return updatedPayment
     } catch (error: any) {
-      console.error('Failed to refund payment:', error)
-      throw new Error(`Failed to refund payment: ${error.message}`)
+      console.error('Failed to refund BSV payment:', error)
+      throw new Error(`Failed to refund BSV payment: ${error.message}`)
+    }
+  }
+
+  /**
+   * Refund MNEE payment
+   */
+  private async refundMneePayment(payment: Payment, now: string): Promise<Payment | null> {
+    const db = getDb()
+    const buyerWallet = this.wallets.getById(payment.buyerWalletId)
+    if (!buyerWallet) throw new Error('Buyer wallet not found')
+
+    const platformAddress = this.getPlatformEscrowAddress()
+    const platformPrivKey = this.getPlatformPrivateKey()
+
+    try {
+      const result = await mneeTokens.transfer(platformAddress, buyerWallet.address, payment.amount, platformPrivKey)
+
+      db.prepare(`UPDATE payments SET status = 'refunded', releaseTxId = ?, completedAt = ? WHERE id = ?`)
+        .run(result.txid, now, payment.id)
+      const updatedPayment = this.getById(payment.id)
+      if (updatedPayment) {
+        webhookDelivery.trigger('payment.failed', updatedPayment).catch(console.error)
+        webhookDelivery.trigger('payment.refunded', updatedPayment).catch(console.error)
+      }
+      return updatedPayment
+    } catch (error: any) {
+      console.error('Failed to refund MNEE payment:', error)
+      throw new Error(`Failed to refund MNEE payment: ${error.message}`)
     }
   }
 
@@ -232,6 +386,7 @@ export class PaymentEngine {
     if (!row) return null
     // Normalize DB columns to API shape
     if (!row.txId && row.escrowTxId) row.txId = row.escrowTxId
+    if (!row.currency) row.currency = 'BSV' // default for legacy payments
     return row as Payment
   }
 
@@ -240,12 +395,20 @@ export class PaymentEngine {
    */
   getByWallet(walletId: string, role: 'buyer' | 'seller' | 'both' = 'both'): Payment[] {
     const db = getDb()
+    let rows: any[]
     if (role === 'buyer') {
-      return db.prepare('SELECT * FROM payments WHERE buyerWalletId = ? ORDER BY createdAt DESC').all(walletId) as Payment[]
+      rows = db.prepare('SELECT * FROM payments WHERE buyerWalletId = ? ORDER BY createdAt DESC').all(walletId) as any[]
     } else if (role === 'seller') {
-      return db.prepare('SELECT * FROM payments WHERE sellerWalletId = ? ORDER BY createdAt DESC').all(walletId) as Payment[]
+      rows = db.prepare('SELECT * FROM payments WHERE sellerWalletId = ? ORDER BY createdAt DESC').all(walletId) as any[]
+    } else {
+      rows = db.prepare('SELECT * FROM payments WHERE buyerWalletId = ? OR sellerWalletId = ? ORDER BY createdAt DESC').all(walletId, walletId) as any[]
     }
-    return db.prepare('SELECT * FROM payments WHERE buyerWalletId = ? OR sellerWalletId = ? ORDER BY createdAt DESC').all(walletId, walletId) as Payment[]
+    
+    // Normalize legacy payments without currency field
+    return rows.map(row => ({
+      ...row,
+      currency: row.currency || 'BSV'
+    })) as Payment[]
   }
 
   private async waitForUtxos(walletId: string, attempts = 10, delayMs = 1500) {
