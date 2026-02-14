@@ -22,6 +22,13 @@ export interface DisputeResolution {
 }
 
 export class DisputeManager {
+  private normalizeDisputeWindowMinutes(value?: number): number {
+    if (!value) return 30
+    // Back-compat for legacy ms values
+    if (value >= 1000) return Math.round(value / 60000)
+    return value
+  }
+
   /**
    * Open a new dispute
    * Can only be opened by buyer within the dispute window
@@ -43,7 +50,7 @@ export class DisputeManager {
     const service = db.prepare('SELECT disputeWindow FROM services WHERE id = ?').get(payment.serviceId) as any
     if (!service) throw new Error('Service not found')
 
-    const disputeWindowMinutes = service.disputeWindow || 30
+    const disputeWindowMinutes = this.normalizeDisputeWindowMinutes(service.disputeWindow)
     const disputeDeadline = new Date(new Date(payment.completedAt || payment.createdAt).getTime() + disputeWindowMinutes * 60000)
     
     if (new Date() > disputeDeadline) {
@@ -192,7 +199,7 @@ export class DisputeManager {
     const now = new Date()
 
     for (const payment of expiredPayments) {
-      const disputeWindowMinutes = payment.disputeWindow || 30
+      const disputeWindowMinutes = this.normalizeDisputeWindowMinutes(payment.disputeWindow)
       const disputeDeadline = new Date(
         new Date(payment.completedAt || payment.createdAt).getTime() + disputeWindowMinutes * 60000
       )
