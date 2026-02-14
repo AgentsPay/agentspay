@@ -64,9 +64,13 @@ export default function WalletPage() {
     try {
       setLoading(true)
       const { authUrl } = await api.connectHandCash()
-      window.location.href = authUrl
+      if (authUrl) {
+        window.location.href = authUrl
+      } else {
+        showError('HandCash Connect not configured. Set HANDCASH_APP_ID and HANDCASH_APP_SECRET in the API server.')
+      }
     } catch (err: any) {
-      showError(err.message)
+      showError('HandCash Connect not available — configure HANDCASH_APP_ID on the server, or use Internal Wallet.')
     } finally {
       setLoading(false)
     }
@@ -76,11 +80,12 @@ export default function WalletPage() {
     try {
       setLoading(true)
       // @ts-ignore - Yours Wallet extension API
-      if (typeof window.yours === 'undefined') {
-        throw new Error('Yours Wallet extension not found. Please install it first.')
+      const yoursWallet = typeof window !== 'undefined' && ((window as any).yours || (window as any).panda)
+      if (!yoursWallet) {
+        showError('Yours Wallet extension not detected. Install it from yours.org, or use Internal Wallet.')
+        return
       }
-      // @ts-ignore
-      const pubKey = await window.yours.getPublicKey()
+      const pubKey = await yoursWallet.getPublicKey()
       const w = await api.connectYours(pubKey)
       const updated = [...wallets, w.id]
       setWallets(updated)
@@ -88,7 +93,7 @@ export default function WalletPage() {
       setSelectedWalletId(w.id)
       success('Yours Wallet connected successfully!')
     } catch (err: any) {
-      showError(err.message)
+      showError(err.message || 'Failed to connect Yours Wallet')
     } finally {
       setLoading(false)
     }
@@ -179,30 +184,33 @@ export default function WalletPage() {
           <h2 className="text-xl font-semibold mb-4">Connect Wallet</h2>
           <div className="grid md:grid-cols-3 gap-4">
             <button
+              onClick={handleConnectInternal}
+              disabled={loading}
+              className="btn btn-primary flex flex-col items-center gap-2 py-6 relative"
+            >
+              <span className="text-2xl">🔐</span>
+              <span className="font-semibold">Create Wallet</span>
+              <span className="text-xs text-gray-400">Keys generated locally</span>
+            </button>
+
+            <button
               onClick={handleConnectHandCash}
               disabled={loading}
-              className="btn btn-primary flex flex-col items-center gap-2 py-6"
+              className="btn btn-secondary flex flex-col items-center gap-2 py-6 relative opacity-70"
             >
               <span className="text-2xl">🤝</span>
-              <span>Connect HandCash</span>
+              <span>HandCash</span>
+              <span className="text-xs text-yellow-500">Requires App ID</span>
             </button>
             
             <button
               onClick={handleConnectYours}
               disabled={loading}
-              className="btn btn-primary flex flex-col items-center gap-2 py-6"
+              className="btn btn-secondary flex flex-col items-center gap-2 py-6 relative opacity-70"
             >
               <span className="text-2xl">👛</span>
-              <span>Connect Yours Wallet</span>
-            </button>
-            
-            <button
-              onClick={handleConnectInternal}
-              disabled={loading}
-              className="btn btn-primary flex flex-col items-center gap-2 py-6"
-            >
-              <span className="text-2xl">🔐</span>
-              <span>Create Internal Wallet</span>
+              <span>Yours Wallet</span>
+              <span className="text-xs text-yellow-500">Requires Extension</span>
             </button>
           </div>
         </div>
