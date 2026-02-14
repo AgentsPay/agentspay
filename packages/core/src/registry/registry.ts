@@ -53,6 +53,10 @@ export class Registry {
       conditions.push('price <= ?')
       params.push(query.maxPrice)
     }
+    if (query.currency) {
+      conditions.push('currency = ?')
+      params.push(query.currency)
+    }
 
     const limit = query.limit || 20
     const offset = query.offset || 0

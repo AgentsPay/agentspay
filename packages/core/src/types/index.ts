@@ -72,6 +72,7 @@ export interface ReputationScore {
 export interface ServiceQuery {
   category?: string
   keyword?: string
+  currency?: Currency
   maxPrice?: number
   minRating?: number
   limit?: number
