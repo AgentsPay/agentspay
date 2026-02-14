@@ -103,16 +103,15 @@ export interface Receipt {
   id: string
   paymentId: string
   serviceId: string
-  buyerWalletId: string
-  sellerWalletId: string
-  amount: number
-  currency: Currency
-  input: any
-  output: any
+  inputHash: string
+  outputHash: string
+  timestamp: number
   executionTimeMs: number
-  hash: string
-  blockchainAnchor?: string
-  verified: boolean
+  providerSignature: string
+  platformSignature: string
+  receiptHash: string
+  blockchainTxId?: string
+  blockchainAnchoredAt?: string
   createdAt: string
 }
 

@@ -409,16 +409,16 @@ export default function ExecuteServicePage() {
                 </div>
               )}
 
-              {receipt?.blockchainAnchor && (
+              {receipt?.blockchainTxId && (
                 <div className="border-t border-green-500/20 pt-4 mb-4">
                   <div className="text-sm text-gray-400 mb-1">Blockchain Anchor</div>
                   <a
-                    href={getExplorerUrl(receipt.blockchainAnchor)}
+                    href={getExplorerUrl(receipt.blockchainTxId)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-blue-500 hover:underline"
                   >
-                    {receipt.blockchainAnchor}
+                    {receipt.blockchainTxId}
                   </a>
                 </div>
               )}
