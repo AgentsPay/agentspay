@@ -148,7 +148,7 @@ app.post('/api/wallets/connect/import', (req, res) => {
     setAuthCookie(res, apiKey)
     res.json({
       ok: true,
-      wallet: { id: wallet.id, publicKey: wallet.publicKey, address: wallet.address, provider: 'import', createdAt: wallet.createdAt },
+      wallet: { id: wallet.id, publicKey: wallet.publicKey, address: wallet.address, provider: 'import', createdAt: wallet.createdAt, apiKey },
       apiKey,
     })
   } catch (err: any) {
@@ -345,9 +345,12 @@ app.post('/api/services', authMiddleware, (req, res) => {
 })
 
 app.get('/api/services', (req, res) => {
+  const currencyRaw = typeof req.query.currency === 'string' ? req.query.currency.toUpperCase() : undefined
+  const currency = currencyRaw === 'BSV' || currencyRaw === 'MNEE' ? currencyRaw : undefined
   const services = registry.search({
     category: typeof req.query.category === 'string' ? req.query.category : undefined,
     keyword: typeof req.query.q === 'string' ? req.query.q : undefined,
+    currency,
     maxPrice: req.query.maxPrice ? Number(req.query.maxPrice) : undefined,
     limit: req.query.limit ? Number(req.query.limit) : undefined,
     offset: req.query.offset ? Number(req.query.offset) : undefined,
@@ -948,6 +951,15 @@ app.get('/api/x402/services/:id', async (req, res) => {
       return res.status(402).json({
         error: `Payment status: ${payment.status}. Expected: released or escrowed.`,
         paymentId: payment.id,
+      })
+    }
+
+    const expectedCurrency = service.currency || 'BSV'
+    const paymentCurrency = payment.currency || 'BSV'
+    if (payment.serviceId !== service.id || payment.amount !== service.price || paymentCurrency !== expectedCurrency) {
+      return res.status(402).json({
+        error: 'Payment does not match service terms',
+        ...buildPaymentRequired(service, PLATFORM_ADDRESS, BSV_NETWORK),
       })
     }
 
