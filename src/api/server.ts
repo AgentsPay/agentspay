@@ -81,54 +81,61 @@ app.post('/api/execute/:serviceId', async (req, res) => {
     })
   }
 
-  // Create escrow payment
-  const payment = payments.create(
-    service.id, buyerWalletId, service.agentId, service.price
-  )
-
-  // Execute the service
-  const startTime = Date.now()
   try {
-    const response = await fetch(service.endpoint, {
-      method: service.method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    })
+    // Create escrow payment (real BSV transaction)
+    const payment = await payments.create(
+      service.id, buyerWalletId, service.agentId, service.price
+    )
 
-    if (!response.ok) {
-      // Service failed → refund
-      payments.refund(payment.id)
-      return res.status(502).json({
-        error: 'Service execution failed',
+    // Execute the service
+    const startTime = Date.now()
+    try {
+      const response = await fetch(service.endpoint, {
+        method: service.method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+
+      if (!response.ok) {
+        // Service failed → refund
+        await payments.refund(payment.id)
+        return res.status(502).json({
+          error: 'Service execution failed',
+          paymentId: payment.id,
+          status: 'refunded',
+        })
+      }
+
+      const output = await response.json()
+      const executionTimeMs = Date.now() - startTime
+
+      // Success → release payment
+      await payments.release(payment.id)
+
+      res.json({
+        ok: true,
+        paymentId: payment.id,
+        output,
+        executionTimeMs,
+        cost: {
+          amount: service.price,
+          platformFee: payment.platformFee,
+          currency: 'satoshis',
+        },
+        txId: payment.txId,
+      })
+    } catch (e: any) {
+      // Network error → refund
+      await payments.refund(payment.id)
+      res.status(502).json({
+        error: `Service unreachable: ${e.message}`,
         paymentId: payment.id,
         status: 'refunded',
       })
     }
-
-    const output = await response.json()
-    const executionTimeMs = Date.now() - startTime
-
-    // Success → release payment
-    payments.release(payment.id)
-
-    res.json({
-      ok: true,
-      paymentId: payment.id,
-      output,
-      executionTimeMs,
-      cost: {
-        amount: service.price,
-        platformFee: payment.platformFee,
-        currency: 'satoshis',
-      },
-    })
   } catch (e: any) {
-    // Network error → refund
-    payments.refund(payment.id)
-    res.status(502).json({
-      error: `Service unreachable: ${e.message}`,
-      paymentId: payment.id,
-      status: 'refunded',
+    res.status(500).json({
+      error: `Payment creation failed: ${e.message}`,
     })
   }
 })
@@ -154,6 +161,34 @@ app.get('/api/agents/:id/reputation', (req, res) => {
   res.json({ ok: true, reputation })
 })
 
+// ============ WALLET UTXOS ============
+
+app.get('/api/wallets/:id/utxos', async (req, res) => {
+  const wallet = wallets.getById(req.params.id)
+  if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
+
+  try {
+    const utxos = await wallets.getUtxos(req.params.id)
+    res.json({ ok: true, utxos })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ============ WALLET TX HISTORY ============
+
+app.get('/api/wallets/:id/transactions', async (req, res) => {
+  const wallet = wallets.getById(req.params.id)
+  if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
+
+  try {
+    const transactions = await wallets.getTxHistory(req.params.id)
+    res.json({ ok: true, transactions })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // ============ FUND (testnet/demo only) ============
 
 app.post('/api/wallets/:id/fund', async (req, res) => {
@@ -163,19 +198,24 @@ app.post('/api/wallets/:id/fund', async (req, res) => {
   const wallet = wallets.getById(req.params.id)
   if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
 
-  // Credit balance directly via a dedicated deposits table
-  const { getDb: getDatabase } = await import('../registry/db')
-  const { v4: uuidv4 } = await import('uuid')
-  const db = getDatabase()
-  // Ensure deposits table exists
-  db.exec(`CREATE TABLE IF NOT EXISTS deposits (
-    id TEXT PRIMARY KEY, walletId TEXT NOT NULL, amount INTEGER NOT NULL, createdAt TEXT NOT NULL
-  )`)
-  db.prepare(`INSERT INTO deposits (id, walletId, amount, createdAt) VALUES (?, ?, ?, datetime('now'))`)
-    .run(uuidv4(), req.params.id, amount)
-
-  const balance = await wallets.getBalance(req.params.id)
-  res.json({ ok: true, funded: amount, balance })
+  // For testnet: document that user should use a faucet
+  const { config: appConfig } = await import('../config')
+  if (appConfig.network === 'testnet') {
+    res.json({
+      ok: false,
+      message: 'Please fund your wallet using a BSV testnet faucet',
+      address: wallet.address,
+      faucets: [
+        'https://faucet.satoshisvision.network/',
+        'https://testnet.satoshisvision.network/faucet',
+      ],
+    })
+  } else {
+    res.status(400).json({
+      error: 'Funding endpoint only available on testnet. Send BSV to the wallet address.',
+      address: wallet.address,
+    })
+  }
 })
 
 // ============ HEALTH ============

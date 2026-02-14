@@ -24,7 +24,17 @@
     "demo": "npx tsx demo/demo.ts",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["ai", "agents", "payments", "bsv", "micropayments", "marketplace", "agent-economy", "a2a", "mcp"],
+  "keywords": [
+    "ai",
+    "agents",
+    "payments",
+    "bsv",
+    "micropayments",
+    "marketplace",
+    "agent-economy",
+    "a2a",
+    "mcp"
+  ],
   "author": "d4rkpsych0",
   "license": "MIT",
   "type": "commonjs",
@@ -40,6 +50,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@bsv/sdk": "^2.0.3",
     "better-sqlite3": "^12.6.2",
     "express": "^5.2.1",
     "uuid": "^13.0.0"

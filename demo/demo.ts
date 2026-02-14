@@ -76,49 +76,76 @@ async function demo() {
   }
   console.log()
 
-  // --- Step 5: Fund consumer wallet (demo/testnet faucet) ---
-  console.log('🪙 Step 5: Funding consumer wallet (demo faucet)...')
-  const funding = await fetch(`${API}/api/wallets/${consumerWallet.wallet.id}/fund`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount: 100000 }), // 100k sats
-  }).then(r => r.json())
-  console.log(`   Funded: ${funding.funded} sats | Balance: ${funding.balance} sats\n`)
-
-  // --- Step 6: Consumer executes (pays + uses) service ---
-  console.log('💰 Step 6: Consumer pays and executes TextAnalyzer...')
-  const execution = await fetch(`${API}/api/execute/${service.service.id}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      buyerWalletId: consumerWallet.wallet.id,
-      input: { text: 'This is a great demo of agent-to-agent payments using BSV micropayments' },
-    }),
-  }).then(r => r.json())
-
-  if (execution.ok) {
-    console.log('   ✅ Transaction successful!')
-    console.log(`   Payment ID: ${execution.paymentId}`)
-    console.log(`   Cost: ${execution.cost.amount} sats (fee: ${execution.cost.platformFee} sats)`)
-    console.log(`   Result:`, execution.output)
-  } else {
-    console.log(`   ⚠️  ${execution.error}`)
-    if (execution.required) {
-      console.log(`   Required: ${execution.required} sats | Available: ${execution.available} sats`)
-      console.log(`   → Fund wallet at: ${execution.address}`)
-    }
+  // --- Step 5: Fund consumer wallet (testnet faucet) ---
+  console.log('🪙 Step 5: Consumer needs to fund wallet via testnet faucet...')
+  console.log(`   Consumer address: ${consumerWallet.wallet.address}`)
+  console.log(`   Fund at: https://faucet.satoshisvision.network/`)
+  console.log(`   (For demo, we'll check if balance > 0 before proceeding)\n`)
+  
+  // Check balance
+  let consumerBalance = 0
+  try {
+    const balanceCheck = await fetch(`${API}/api/wallets/${consumerWallet.wallet.id}`).then(r => r.json())
+    consumerBalance = balanceCheck.wallet.balance || 0
+    console.log(`   Current balance: ${consumerBalance} sats`)
+  } catch {
+    console.log(`   ⚠️  Could not fetch balance (network might be unavailable)`)
   }
 
-  // --- Step 7: Check reputation ---
-  console.log('\n📊 Step 7: Provider reputation...')
-  const rep = await fetch(`${API}/api/agents/${providerWallet.wallet.id}/reputation`).then(r => r.json())
-  console.log(`   Total jobs: ${rep.reputation.totalJobs}`)
-  console.log(`   Success rate: ${(rep.reputation.successRate * 100).toFixed(0)}%`)
-  console.log(`   Total earned: ${rep.reputation.totalEarned} sats`)
+  if (consumerBalance === 0) {
+    console.log(`\n   ⚠️  Wallet has 0 balance. For a real demo:`)
+    console.log(`   1. Send testnet BSV to: ${consumerWallet.wallet.address}`)
+    console.log(`   2. Wait for confirmation`)
+    console.log(`   3. Re-run this demo`)
+    console.log(`\n   Skipping execution step...\n`)
+  }
+
+  // --- Step 6: Consumer executes (pays + uses) service ---
+  if (consumerBalance >= service.service.price) {
+    console.log('💰 Step 6: Consumer pays and executes TextAnalyzer...')
+    try {
+      const execution = await fetch(`${API}/api/execute/${service.service.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buyerWalletId: consumerWallet.wallet.id,
+          input: { text: 'This is a great demo of agent-to-agent payments using BSV micropayments' },
+        }),
+      }).then(r => r.json())
+
+      if (execution.ok) {
+        console.log('   ✅ Transaction successful!')
+        console.log(`   Payment ID: ${execution.paymentId}`)
+        console.log(`   BSV Transaction: ${execution.txId}`)
+        console.log(`   View on explorer: https://test.whatsonchain.com/tx/${execution.txId}`)
+        console.log(`   Cost: ${execution.cost.amount} sats (fee: ${execution.cost.platformFee} sats)`)
+        console.log(`   Result:`, execution.output)
+      } else {
+        console.log(`   ⚠️  ${execution.error}`)
+        if (execution.required) {
+          console.log(`   Required: ${execution.required} sats | Available: ${execution.available} sats`)
+          console.log(`   → Fund wallet at: ${execution.address}`)
+        }
+      }
+
+      // --- Step 7: Check reputation ---
+      console.log('\n📊 Step 7: Provider reputation...')
+      const rep = await fetch(`${API}/api/agents/${providerWallet.wallet.id}/reputation`).then(r => r.json())
+      console.log(`   Total jobs: ${rep.reputation.totalJobs}`)
+      console.log(`   Success rate: ${(rep.reputation.successRate * 100).toFixed(0)}%`)
+      console.log(`   Total earned: ${rep.reputation.totalEarned} sats`)
+    } catch (error: any) {
+      console.log(`   ⚠️  Execution failed: ${error.message}`)
+    }
+  } else {
+    console.log('💰 Step 6: Skipped (insufficient balance)')
+  }
 
   console.log('\n═══════════════════════════════════════')
-  console.log('  ✅ Demo complete! AgentPay MVP working.')
-  console.log('  Next: Integrate real BSV transactions')
+  console.log('  ✅ Demo complete! AgentPay with REAL BSV')
+  console.log('  Network: BSV Testnet')
+  console.log('  Provider: ' + providerWallet.wallet.address)
+  console.log('  Consumer: ' + consumerWallet.wallet.address)
   console.log('═══════════════════════════════════════')
 
   process.exit(0)

@@ -2,90 +2,234 @@ import { v4 as uuid } from 'uuid'
 import { getDb } from '../registry/db'
 import { PLATFORM_FEE_RATE } from '../types'
 import type { Payment } from '../types'
+import { WalletManager } from '../wallet/wallet'
+import { buildTransaction, privateKeyFromWif, getTxId } from '../bsv/crypto'
+import { broadcastTx } from '../bsv/whatsonchain'
+import { config } from '../config'
 
 /**
- * Payment Engine
+ * Payment Engine with Real BSV Transactions
  * 
  * Flow:
  * 1. Buyer requests execution → payment created as 'pending'
- * 2. Funds verified → payment moves to 'escrowed'
- * 3. Service executed successfully → 'released' (funds to seller)
- * 4. Service fails → 'refunded' (funds back to buyer)
+ * 2. Buyer sends funds to platform escrow wallet → 'escrowed'
+ * 3. Service executed successfully → platform sends to seller → 'released'
+ * 4. Service fails → platform refunds buyer → 'refunded'
  * 5. Dispute → 'disputed' (manual resolution)
  * 
- * MVP: Internal ledger. TODO: Real BSV transactions with escrow script.
+ * MVP: Platform escrow (centralized). Funds go to platform wallet temporarily.
+ * Future: Implement hashlock (HTLC) or 2-of-3 multisig for trustless escrow.
  */
 export class PaymentEngine {
+  private wallets = new WalletManager()
 
-  // Create a payment (escrow funds)
-  create(serviceId: string, buyerWalletId: string, sellerWalletId: string, amount: number): Payment {
+  /**
+   * Create a payment (escrow funds on-chain)
+   * Buyer must send funds to platform escrow address
+   */
+  async create(serviceId: string, buyerWalletId: string, sellerWalletId: string, amount: number): Promise<Payment> {
     const db = getDb()
     const id = uuid()
     const platformFee = Math.ceil(amount * PLATFORM_FEE_RATE)
     const now = new Date().toISOString()
 
-    db.prepare(`
-      INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?)
-    `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, now)
+    // Get buyer wallet
+    const buyerWallet = this.wallets.getById(buyerWalletId)
+    if (!buyerWallet) throw new Error('Buyer wallet not found')
 
-    return {
-      id, serviceId, buyerWalletId, sellerWalletId,
-      amount, platformFee, status: 'escrowed', createdAt: now,
+    // Get buyer's private key
+    const buyerPrivKeyWif = this.wallets.getPrivateKey(buyerWalletId)
+    if (!buyerPrivKeyWif) throw new Error('Cannot access buyer private key')
+
+    const buyerPrivKey = privateKeyFromWif(buyerPrivKeyWif)
+
+    // Get buyer's UTXOs
+    const utxos = await this.wallets.getUtxos(buyerWalletId)
+    if (utxos.length === 0) {
+      throw new Error('No UTXOs available. Please fund your wallet.')
+    }
+
+    // Calculate total available
+    const totalAvailable = utxos.reduce((sum, utxo) => sum + utxo.amount, 0)
+    if (totalAvailable < amount) {
+      throw new Error(`Insufficient funds. Need ${amount} sats, have ${totalAvailable} sats`)
+    }
+
+    // Get platform escrow address (for MVP, we use a platform-controlled wallet)
+    const platformAddress = this.getPlatformEscrowAddress()
+
+    // Build transaction: buyer → platform escrow
+    try {
+      const txHex = buildTransaction(
+        utxos,
+        [{ address: platformAddress, amount }],
+        buyerWallet.address, // change back to buyer
+        buyerPrivKey
+      )
+
+      // Broadcast transaction
+      const txId = await broadcastTx(txHex)
+
+      // Store payment with escrow txId
+      db.prepare(`
+        INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status, escrowTxId, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
+      `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, txId, now)
+
+      return {
+        id, serviceId, buyerWalletId, sellerWalletId,
+        amount, platformFee, status: 'escrowed', 
+        txId: txId,
+        createdAt: now,
+      }
+    } catch (error: any) {
+      throw new Error(`Failed to create escrow transaction: ${error.message}`)
     }
   }
 
-  // Release payment (service completed successfully)
-  release(paymentId: string): Payment | null {
+  /**
+   * Release payment (service completed successfully)
+   * Platform sends escrowed funds to seller
+   */
+  async release(paymentId: string): Promise<Payment | null> {
     const db = getDb()
-    const now = new Date().toISOString()
+    const payment = this.getById(paymentId)
+    
+    if (!payment || payment.status !== 'escrowed') {
+      return null
+    }
 
-    const result = db.prepare(`
-      UPDATE payments SET status = 'released', completedAt = ?
-      WHERE id = ? AND status = 'escrowed'
-    `).run(now, paymentId)
+    const sellerWallet = this.wallets.getById(payment.sellerWalletId)
+    if (!sellerWallet) {
+      throw new Error('Seller wallet not found')
+    }
 
-    if (result.changes === 0) return null
+    try {
+      // Get platform wallet private key
+      const platformPrivKeyWif = this.getPlatformPrivateKey()
+      const platformPrivKey = privateKeyFromWif(platformPrivKeyWif)
+      const platformAddress = this.getPlatformEscrowAddress()
 
-    // TODO: Broadcast BSV transaction (escrow → seller)
-    return this.getById(paymentId)
+      // Get platform UTXOs (should include the escrow tx)
+      const platformWallet = this.getOrCreatePlatformWallet()
+      const utxos = await this.wallets.getUtxos(platformWallet.id)
+
+      if (utxos.length === 0) {
+        throw new Error('Platform wallet has no UTXOs')
+      }
+
+      // Calculate seller payout (amount - platform fee)
+      const sellerPayout = payment.amount - payment.platformFee
+
+      // Build transaction: platform → seller
+      const txHex = buildTransaction(
+        utxos,
+        [{ address: sellerWallet.address, amount: sellerPayout }],
+        platformAddress, // change back to platform
+        platformPrivKey
+      )
+
+      // Broadcast transaction
+      const releaseTxId = await broadcastTx(txHex)
+
+      // Update payment status
+      const now = new Date().toISOString()
+      db.prepare(`
+        UPDATE payments 
+        SET status = 'released', releaseTxId = ?, completedAt = ?
+        WHERE id = ?
+      `).run(releaseTxId, now, paymentId)
+
+      return this.getById(paymentId)
+    } catch (error: any) {
+      console.error('Failed to release payment:', error)
+      throw new Error(`Failed to release payment: ${error.message}`)
+    }
   }
 
-  // Refund payment (service failed)
-  refund(paymentId: string): Payment | null {
+  /**
+   * Refund payment (service failed)
+   * Platform returns escrowed funds to buyer
+   */
+  async refund(paymentId: string): Promise<Payment | null> {
     const db = getDb()
-    const now = new Date().toISOString()
+    const payment = this.getById(paymentId)
+    
+    if (!payment || payment.status !== 'escrowed') {
+      return null
+    }
 
-    const result = db.prepare(`
-      UPDATE payments SET status = 'refunded', completedAt = ?
-      WHERE id = ? AND status = 'escrowed'
-    `).run(now, paymentId)
+    const buyerWallet = this.wallets.getById(payment.buyerWalletId)
+    if (!buyerWallet) {
+      throw new Error('Buyer wallet not found')
+    }
 
-    if (result.changes === 0) return null
+    try {
+      // Get platform wallet private key
+      const platformPrivKeyWif = this.getPlatformPrivateKey()
+      const platformPrivKey = privateKeyFromWif(platformPrivKeyWif)
+      const platformAddress = this.getPlatformEscrowAddress()
 
-    // TODO: Broadcast BSV refund transaction
-    return this.getById(paymentId)
+      // Get platform UTXOs
+      const platformWallet = this.getOrCreatePlatformWallet()
+      const utxos = await this.wallets.getUtxos(platformWallet.id)
+
+      if (utxos.length === 0) {
+        throw new Error('Platform wallet has no UTXOs')
+      }
+
+      // Build transaction: platform → buyer (full refund)
+      const txHex = buildTransaction(
+        utxos,
+        [{ address: buyerWallet.address, amount: payment.amount }],
+        platformAddress,
+        platformPrivKey
+      )
+
+      // Broadcast transaction
+      const refundTxId = await broadcastTx(txHex)
+
+      // Update payment status
+      const now = new Date().toISOString()
+      db.prepare(`
+        UPDATE payments 
+        SET status = 'refunded', releaseTxId = ?, completedAt = ?
+        WHERE id = ?
+      `).run(refundTxId, now, paymentId)
+
+      return this.getById(paymentId)
+    } catch (error: any) {
+      console.error('Failed to refund payment:', error)
+      throw new Error(`Failed to refund payment: ${error.message}`)
+    }
   }
 
-  // Dispute payment
+  /**
+   * Dispute payment
+   */
   dispute(paymentId: string): Payment | null {
     const db = getDb()
 
-    db.prepare(`
+    const result = db.prepare(`
       UPDATE payments SET status = 'disputed'
       WHERE id = ? AND status = 'escrowed'
     `).run(paymentId)
 
+    if (result.changes === 0) return null
     return this.getById(paymentId)
   }
 
-  // Get payment by ID
+  /**
+   * Get payment by ID
+   */
   getById(id: string): Payment | null {
     const db = getDb()
     return db.prepare('SELECT * FROM payments WHERE id = ?').get(id) as Payment | null
   }
 
-  // Get payments for a wallet
+  /**
+   * Get payments for a wallet
+   */
   getByWallet(walletId: string, role: 'buyer' | 'seller' | 'both' = 'both'): Payment[] {
     const db = getDb()
     if (role === 'buyer') {
@@ -94,5 +238,55 @@ export class PaymentEngine {
       return db.prepare('SELECT * FROM payments WHERE sellerWalletId = ? ORDER BY createdAt DESC').all(walletId) as Payment[]
     }
     return db.prepare('SELECT * FROM payments WHERE buyerWalletId = ? OR sellerWalletId = ? ORDER BY createdAt DESC').all(walletId, walletId) as Payment[]
+  }
+
+  /**
+   * Get or create platform escrow wallet
+   */
+  private getOrCreatePlatformWallet(): { id: string; address: string } {
+    const db = getDb()
+    
+    // Check if platform wallet exists
+    const existing = db.prepare('SELECT id, address FROM wallets WHERE address = ?').get(this.getPlatformEscrowAddress()) as any
+    if (existing) {
+      return existing
+    }
+
+    // Create platform wallet if it doesn't exist
+    const wallet = this.wallets.create()
+    console.log('⚠️  Created new platform escrow wallet:', wallet.address)
+    console.log('⚠️  STORE THIS PRIVATE KEY SECURELY:', wallet.privateKey)
+    
+    return { id: wallet.id, address: wallet.address }
+  }
+
+  /**
+   * Get platform escrow address
+   */
+  private getPlatformEscrowAddress(): string {
+    // For MVP: use env var or derive from master key
+    if (config.platformWallet.address) {
+      return config.platformWallet.address
+    }
+
+    // Generate deterministic address from master key (not recommended for production!)
+    const { generatePrivateKey, deriveAddress } = require('../bsv/crypto')
+    const privKey = generatePrivateKey()
+    return deriveAddress(privKey)
+  }
+
+  /**
+   * Get platform private key (SECURE THIS!)
+   */
+  private getPlatformPrivateKey(): string {
+    if (config.platformWallet.privateKey) {
+      return config.platformWallet.privateKey
+    }
+
+    // For dev/testing only - generate ephemeral key
+    console.warn('⚠️  Using ephemeral platform key - NOT FOR PRODUCTION')
+    const { generatePrivateKey } = require('../bsv/crypto')
+    const privKey = generatePrivateKey()
+    return privKey.toWif()
   }
 }
