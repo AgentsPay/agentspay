@@ -1,18 +1,21 @@
 import express from 'express'
 import cors from 'cors'
-import rateLimit from 'express-rate-limit'
-import net from 'net'
-import { WalletManager } from '../wallet/wallet'
-import { Registry } from '../registry/registry'
-import { PaymentEngine } from '../payment/payment'
-import { getDb } from '../registry/db'
-import { WebhookManager } from '../webhooks/webhook'
-import { webhookDelivery } from '../webhooks/delivery'
-import { DisputeManager } from '../disputes/dispute'
-import { setupSwagger } from '../docs/swagger'
-import { mneeTokens } from '../bsv/mnee'
-import { CurrencyManager } from '../currency/currency'
-import { VerificationManager } from '../verification/verification'
+import {
+  WalletManager,
+  Registry,
+  PaymentEngine,
+  getDb,
+  WebhookManager,
+  webhookDelivery,
+  DisputeManager,
+  mneeTokens,
+  CurrencyManager,
+  VerificationManager,
+  validateServiceEndpoint
+} from '@agentspay/core'
+import { setupSwagger } from './docs/swagger'
+import { requireApiKey, requireWalletMatch, getApiKey } from './middleware/auth'
+import { apiRateLimit } from './middleware/rateLimit'
 
 const app = express()
 app.disable('x-powered-by')
@@ -23,15 +26,7 @@ app.use(express.json())
 setupSwagger(app)
 
 // Basic API rate limiting (in-memory)
-app.use(
-  '/api',
-  rateLimit({
-    windowMs: 60_000,
-    limit: 100,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-  })
-)
+app.use('/api', apiRateLimit)
 
 const wallets = new WalletManager()
 const registry = new Registry()
@@ -40,64 +35,8 @@ const webhooks = new WebhookManager()
 const disputes = new DisputeManager()
 const verification = new VerificationManager()
 
-function getApiKey(req: express.Request): string | null {
-  const key = req.header('x-api-key') || req.header('authorization')
-  if (!key) return null
-  const m = key.match(/^Bearer\s+(.+)$/i)
-  return m ? m[1].trim() : key.trim()
-}
-
-function requireApiKey(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const apiKey = getApiKey(req)
-  if (!apiKey) return res.status(401).json({ error: 'API key required' })
-  const wallet = wallets.getByApiKey(apiKey)
-  if (!wallet) return res.status(401).json({ error: 'Invalid API key' })
-  ;(req as any).authWallet = wallet
-  ;(req as any).apiKey = apiKey
-  next()
-}
-
-function requireWalletMatch(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const auth = (req as any).authWallet as { id: string } | undefined
-  if (!auth) return res.status(500).json({ error: 'Auth context missing' })
-  if (req.params.id !== auth.id) return res.status(403).json({ error: 'Forbidden' })
-  next()
-}
-
-function isPrivateIp(ip: string): boolean {
-  // IPv4 only (sufficient for audit scenarios)
-  const parts = ip.split('.').map(p => Number(p))
-  if (parts.length !== 4 || parts.some(n => !Number.isFinite(n))) return false
-  const [a, b] = parts
-  if (a === 10) return true
-  if (a === 127) return true
-  if (a === 0) return true
-  if (a === 169 && b === 254) return true
-  if (a === 172 && b >= 16 && b <= 31) return true
-  if (a === 192 && b === 168) return true
-  return false
-}
-
-function validateServiceEndpoint(endpoint: string) {
-  let u: URL
-  try {
-    u = new URL(endpoint)
-  } catch {
-    throw new Error('Invalid endpoint URL')
-  }
-  if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Endpoint must be http(s)')
-
-  const host = u.hostname.toLowerCase()
-  if (host === 'localhost' || host === '0.0.0.0') throw new Error('Endpoint host not allowed')
-  if (host === '169.254.169.254') throw new Error('Endpoint host not allowed')
-
-  if (net.isIP(host)) {
-    if (isPrivateIp(host)) throw new Error('Endpoint IP not allowed')
-  }
-
-  const port = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80
-  if (![80, 443].includes(port)) throw new Error('Endpoint port not allowed')
-}
+// Create middleware instances with wallet manager
+const authMiddleware = requireApiKey(wallets)
 
 // ============ WALLETS ============
 
@@ -133,7 +72,7 @@ app.post('/api/wallets/import', (req, res) => {
   }
 })
 
-app.get('/api/wallets/:id', requireApiKey, requireWalletMatch, async (req, res) => {
+app.get('/api/wallets/:id', authMiddleware, requireWalletMatch, async (req, res) => {
   const wallet = wallets.getById(String(req.params.id))
   if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
   const balance = await wallets.getBalance(String(req.params.id))
@@ -175,7 +114,7 @@ app.get('/api/rates', async (_req, res) => {
   }
 })
 
-app.post('/api/wallets/:id/fund-mnee', requireApiKey, requireWalletMatch, async (req, res) => {
+app.post('/api/wallets/:id/fund-mnee', authMiddleware, requireWalletMatch, async (req, res) => {
   try {
     const { amount } = req.body
     const wallet = wallets.getById(String(req.params.id))
@@ -202,7 +141,7 @@ app.post('/api/wallets/:id/fund-mnee', requireApiKey, requireWalletMatch, async 
 
 // ============ SERVICES (Registry) ============
 
-app.post('/api/services', requireApiKey, (req, res) => {
+app.post('/api/services', authMiddleware, (req, res) => {
   try {
     const auth = (req as any).authWallet as { id: string }
     if (req.body?.agentId !== auth.id) return res.status(403).json({ error: 'Forbidden' })
@@ -249,7 +188,7 @@ app.get('/api/services/:id', (req, res) => {
   res.json({ ok: true, service })
 })
 
-app.patch('/api/services/:id', requireApiKey, (req, res) => {
+app.patch('/api/services/:id', authMiddleware, (req, res) => {
   const auth = (req as any).authWallet as { id: string }
   const existing = registry.getById(String(req.params.id))
   if (!existing) return res.status(404).json({ error: 'Service not found' })
@@ -423,7 +362,7 @@ app.post('/api/payments/:id/dispute', (req, res) => {
 
 // ============ DISPUTES ============
 
-app.post('/api/disputes', requireApiKey, (req, res) => {
+app.post('/api/disputes', authMiddleware, (req, res) => {
   try {
     const auth = (req as any).authWallet as { id: string }
     const { paymentId, reason, evidence } = req.body
@@ -445,7 +384,7 @@ app.post('/api/disputes', requireApiKey, (req, res) => {
   }
 })
 
-app.get('/api/disputes/:id', requireApiKey, (req, res) => {
+app.get('/api/disputes/:id', authMiddleware, (req, res) => {
   const dispute = disputes.getById(String(req.params.id))
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' })
 
@@ -457,7 +396,7 @@ app.get('/api/disputes/:id', requireApiKey, (req, res) => {
   res.json({ ok: true, dispute })
 })
 
-app.get('/api/disputes', requireApiKey, (req, res) => {
+app.get('/api/disputes', authMiddleware, (req, res) => {
   const auth = (req as any).authWallet as { id: string }
   const status = typeof req.query.status === 'string' ? req.query.status : undefined
   
@@ -465,7 +404,7 @@ app.get('/api/disputes', requireApiKey, (req, res) => {
   res.json({ ok: true, disputes: disputesList })
 })
 
-app.post('/api/disputes/:id/resolve', requireApiKey, (req, res) => {
+app.post('/api/disputes/:id/resolve', authMiddleware, (req, res) => {
   try {
     // TODO: Add admin check here (for now, any authenticated user can resolve)
     // In production, this should be restricted to platform admins
@@ -529,7 +468,7 @@ app.get('/api/wallets/:id/transactions', async (req, res) => {
 
 // ============ FUND (testnet/demo only) ============
 
-app.post('/api/wallets/:id/fund', requireApiKey, requireWalletMatch, async (req, res) => {
+app.post('/api/wallets/:id/fund', authMiddleware, requireWalletMatch, async (req, res) => {
   const { amount } = req.body
   if (!Number.isInteger(amount) || amount <= 0 || amount > 100000000) return res.status(400).json({ error: 'Invalid amount' })
 
@@ -553,7 +492,7 @@ app.post('/api/wallets/:id/fund', requireApiKey, requireWalletMatch, async (req,
 
 // ============ WEBHOOKS ============
 
-app.post('/api/webhooks', requireApiKey, (req, res) => {
+app.post('/api/webhooks', authMiddleware, (req, res) => {
   try {
     const auth = (req as any).authWallet as { id: string }
     const { url, events } = req.body
@@ -573,13 +512,13 @@ app.post('/api/webhooks', requireApiKey, (req, res) => {
   }
 })
 
-app.get('/api/webhooks', requireApiKey, (req, res) => {
+app.get('/api/webhooks', authMiddleware, (req, res) => {
   const auth = (req as any).authWallet as { id: string }
   const webhookList = webhooks.list(auth.id)
   res.json({ ok: true, webhooks: webhookList })
 })
 
-app.put('/api/webhooks/:id', requireApiKey, (req, res) => {
+app.put('/api/webhooks/:id', authMiddleware, (req, res) => {
   try {
     const auth = (req as any).authWallet as { id: string }
     const { url, events, active } = req.body
@@ -608,7 +547,7 @@ app.put('/api/webhooks/:id', requireApiKey, (req, res) => {
   }
 })
 
-app.delete('/api/webhooks/:id', requireApiKey, (req, res) => {
+app.delete('/api/webhooks/:id', authMiddleware, (req, res) => {
   try {
     const auth = (req as any).authWallet as { id: string }
     const deleted = webhooks.delete(req.params.id as string, auth.id)

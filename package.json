@@ -1,74 +1,16 @@
 {
-  "name": "agentspay",
+  "name": "agentspay-monorepo",
   "version": "0.2.0",
-  "description": "The marketplace where AI agents pay each other for services. Micropayments via BSV.",
-  "main": "dist/sdk/index.js",
-  "types": "dist/sdk/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/sdk/index.d.ts",
-      "require": "./dist/sdk/index.js"
-    },
-    "./server": {
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js"
-    }
-  },
-  "bin": {
-    "agentspay": "./dist/index.js"
-  },
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "build": "tsc && node -e \"require('fs').mkdirSync('dist/docs',{recursive:true})\" && node -e \"require('fs').copyFileSync('src/docs/openapi.yaml','dist/docs/openapi.yaml')\"",
-    "start": "node dist/index.js",
-    "dev": "npx tsx src/index.ts",
-    "demo": "npx tsx demo/demo.ts",
-    "prepublishOnly": "npm run build"
-  },
-  "keywords": [
-    "ai",
-    "agents",
-    "payments",
-    "bsv",
-    "micropayments",
-    "marketplace",
-    "agent-economy",
-    "a2a",
-    "mcp"
-  ],
-  "author": "d4rkpsych0",
-  "license": "MIT",
-  "type": "commonjs",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/agentspay/agentspay.git"
-  },
-  "homepage": "https://agentspay.dev",
-  "bugs": {
-    "url": "https://github.com/agentspay/agentspay/issues"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "@bsv/sdk": "^2.0.3",
-    "@types/cors": "^2.8.19",
-    "@types/js-yaml": "^4.0.9",
-    "@types/swagger-jsdoc": "^6.0.4",
-    "@types/swagger-ui-express": "^4.1.8",
-    "better-sqlite3": "^12.6.2",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.2.1",
-    "js-yaml": "^4.1.1",
-    "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^5.0.1",
-    "uuid": "^13.0.0"
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "clean": "turbo clean",
+    "demo": "pnpm --filter @agentspay/api demo"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/express": "^5.0.6",
-    "@types/node": "^25.2.3",
-    "@types/uuid": "^10.0.0",
-    "typescript": "^5.9.3"
+    "turbo": "^2.0.0"
   }
 }

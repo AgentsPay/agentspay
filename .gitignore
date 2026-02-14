@@ -1,5 +1,12 @@
-node_modules/
-dist/
-data/*.db
+node_modules
+dist
+.turbo
+data
+*.db
+*.db-journal
 .env
+.DS_Store
 *.log
+.next
+out
+build

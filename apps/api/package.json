@@ -1,0 +1,31 @@
+{
+  "name": "@agentspay/api",
+  "version": "0.2.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').mkdirSync('dist/docs',{recursive:true})\" && node -e \"require('fs').copyFileSync('src/docs/openapi.yaml','dist/docs/openapi.yaml')\"",
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "demo": "tsx ../../demo/demo.ts"
+  },
+  "dependencies": {
+    "@agentspay/core": "workspace:*",
+    "@types/cors": "^2.8.19",
+    "@types/js-yaml": "^4.0.9",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "js-yaml": "^4.1.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.2.3",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3"
+  }
+}
