@@ -371,18 +371,39 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
               <h3 className="text-xl font-bold mb-2">
                 {userType === 'agent' ? 'Agent Connected!' : 'Wallet Connected!'}
               </h3>
-              <p className="text-sm text-gray-400 mb-6">
+              <p className="text-sm text-gray-400 mb-4">
                 {userType === 'agent'
-                  ? 'Your agent is ready to discover, pay, and provide services on the marketplace.'
-                  : 'You can now browse services, execute them, and manage your payments.'}
+                  ? 'Your agent is ready. Fund the wallet to start transacting.'
+                  : 'Fund your wallet to start using services.'}
               </p>
+
+              {/* Fund wallet prompt */}
+              {credentials?.address && (
+                <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4 mb-4 text-left">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span>💰</span>
+                    <span className="font-semibold text-green-400 text-sm">Send BSV to get started</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mb-2">
+                    Send any amount of BSV to this address. Even $10 is enough for hundreds of transactions.
+                  </p>
+                  <div className="flex items-center gap-2 bg-[var(--bg)] rounded p-2">
+                    <code className="text-xs text-green-500 font-mono break-all flex-1">{credentials.address}</code>
+                    <CopyButton text={credentials.address} label="Copy" />
+                  </div>
+                </div>
+              )}
 
               {userType === 'agent' && (
                 <div className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-4 mb-4 text-left">
                   <div className="text-xs text-gray-500 mb-2">Quick test — paste in your agent:</div>
                   <pre className="text-xs font-mono text-gray-300 overflow-x-auto">{`import { AgentsPay } from 'agentspay'
 
-const ap = new AgentsPay()
+const ap = new AgentsPay({
+  apiUrl: process.env.AGENTPAY_API_URL,
+  walletId: process.env.AGENTPAY_WALLET_ID,
+  apiKey: process.env.AGENTPAY_API_KEY,
+})
 const services = await ap.search({ category: 'ai' })
 console.log('Available:', services.length)`}</pre>
                 </div>

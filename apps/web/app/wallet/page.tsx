@@ -361,30 +361,49 @@ export default function WalletPage() {
                 </div>
               )}
 
-              {/* Fund Wallet (Demo Mode) */}
+              {/* Fund Wallet */}
               {wallet.provider === 'internal' && (
                 <div className="border-t border-[var(--border)] pt-4">
-                  <label className="label">Fund Wallet (Demo Mode)</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      value={fundAmount}
-                      onChange={(e) => setFundAmount(e.target.value)}
-                      placeholder="Amount in satoshis"
-                      className="input flex-1"
-                      min="0"
-                    />
-                    <button
-                      onClick={handleFund}
-                      disabled={loading || !fundAmount}
-                      className="btn btn-primary"
-                    >
-                      Fund
-                    </button>
+                  <label className="label">Fund Wallet</label>
+                  
+                  {/* Real mode: show address to send BSV */}
+                  <div className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-4 mb-3">
+                    <p className="text-sm text-gray-400 mb-2">Send BSV to this address to fund your wallet:</p>
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm text-green-500 font-mono break-all flex-1">{wallet.address}</code>
+                      <CopyButton text={wallet.address} label="Copy" />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      💡 Start small — even $10 in BSV is enough for hundreds of transactions
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Demo mode: adds balance via internal ledger (not real BSV)
-                  </p>
+
+                  {/* Demo fund (only works in demo mode) */}
+                  <details className="text-sm">
+                    <summary className="text-gray-500 cursor-pointer hover:text-gray-300">
+                      Demo mode: add test balance
+                    </summary>
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        type="number"
+                        value={fundAmount}
+                        onChange={(e) => setFundAmount(e.target.value)}
+                        placeholder="Amount in satoshis"
+                        className="input flex-1"
+                        min="0"
+                      />
+                      <button
+                        onClick={handleFund}
+                        disabled={loading || !fundAmount}
+                        className="btn btn-secondary text-sm"
+                      >
+                        Fund (Demo)
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Only works when server runs with AGENTPAY_DEMO=true
+                    </p>
+                  </details>
                 </div>
               )}
             </div>

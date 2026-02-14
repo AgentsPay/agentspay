@@ -1,3 +1,8 @@
+import { config as dotenvConfig } from 'dotenv'
+import { resolve } from 'path'
+// Load .env from monorepo root
+dotenvConfig({ path: resolve(process.cwd(), '.env') })
+
 process.on('uncaughtException', (err) => { console.error('UNCAUGHT:', err); })
 process.on('unhandledRejection', (err) => { console.error('UNHANDLED:', err); })
 
@@ -672,6 +677,18 @@ app.get('/api/wallets/:id/transactions', async (req, res) => {
 // ============ FUND (testnet/demo only) ============
 
 app.post('/api/wallets/:id/fund', authMiddleware, requireWalletMatch, async (req, res) => {
+  // In real mode, users send BSV directly to the wallet address
+  if (!isDemoMode) {
+    const wallet = wallets.getById(String(req.params.id))
+    if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
+    return res.status(400).json({
+      error: 'Demo funding disabled in production mode',
+      message: 'Send real BSV to your wallet address to fund it',
+      address: wallet.address,
+      network: process.env.BSV_NETWORK || 'mainnet',
+    })
+  }
+
   const { amount } = req.body
   if (!Number.isInteger(amount) || amount <= 0 || amount > 100000000) return res.status(400).json({ error: 'Invalid amount' })
 
@@ -690,7 +707,7 @@ app.post('/api/wallets/:id/fund', authMiddleware, requireWalletMatch, async (req
   )
 
   const balance = await wallets.getBalance(String(req.params.id))
-  res.json({ ok: true, funded: amount, balance, mode: 'internal-ledger' })
+  res.json({ ok: true, funded: amount, balance, mode: 'demo-ledger' })
 })
 
 // ============ WEBHOOKS ============
