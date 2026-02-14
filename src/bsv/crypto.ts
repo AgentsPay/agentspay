@@ -102,107 +102,54 @@ export async function buildTransaction(
   changeAddress: string,
   privateKey: PrivateKey
 ): Promise<string> {
-  console.log('[DEBUG] buildTransaction called with', {
-    utxoCount: utxos.length,
-    outputCount: outputs.length,
-    changeAddress,
-  })
-  
   const tx = new Transaction()
-  console.log('[DEBUG] Transaction object created')
 
   // Add inputs
   let totalInput = 0
-  for (let i = 0; i < utxos.length; i++) {
-    const utxo = utxos[i]
-    console.log(`[DEBUG] Processing UTXO ${i}:`, { txid: utxo.txid, vout: utxo.vout, amount: utxo.amount })
-    
-    try {
-      const lockingScript = Script.fromHex(utxo.script)
-      console.log('[DEBUG] Locking script created from hex')
-      
-      // Create unlock template - simpler approach
-      const unlockTemplate = new P2PKH().unlock(privateKey)
-      console.log('[DEBUG] Unlock template created')
-      
-      tx.addInput({
-        sourceTransaction: {
-          outputs: [{
-            lockingScript,
-            satoshis: utxo.amount,
-          }],
-        } as any,
-        sourceTXID: utxo.txid,
-        sourceOutputIndex: utxo.vout,
-        unlockingScriptTemplate: unlockTemplate,
-        sequence: 0xffffffff,
-      })
-      console.log(`[DEBUG] Input ${i} added successfully`)
-      totalInput += utxo.amount
-    } catch (error: any) {
-      console.error(`[DEBUG] Failed to add input ${i}:`, error.message)
-      throw error
-    }
+  for (const utxo of utxos) {
+    const lockingScript = Script.fromHex(utxo.script)
+    const unlockTemplate = new P2PKH().unlock(privateKey)
+
+    const sourceOutputs = Array.from({ length: utxo.vout + 1 }, (_v, idx) => ({
+      lockingScript,
+      satoshis: idx === utxo.vout ? utxo.amount : 0,
+    }))
+
+    tx.addInput({
+      sourceTransaction: {
+        outputs: sourceOutputs,
+      } as any,
+      sourceTXID: utxo.txid,
+      sourceOutputIndex: utxo.vout,
+      unlockingScriptTemplate: unlockTemplate,
+      sequence: 0xffffffff,
+    })
+
+    totalInput += utxo.amount
   }
-  
-  console.log('[DEBUG] All inputs added, totalInput:', totalInput)
 
   // Add outputs
   let totalOutput = 0
   for (const output of outputs) {
     const lockingScript = new P2PKH().lock(output.address)
-    tx.addOutput({
-      lockingScript,
-      satoshis: output.amount,
-    })
+    tx.addOutput({ lockingScript, satoshis: output.amount })
     totalOutput += output.amount
   }
 
-  // Calculate fee (estimate without serializing)
+  // Fee estimate without serializing (sdk needs unlocking scripts to serialize)
   // P2PKH input: ~148 bytes, P2PKH output: ~34 bytes, overhead: ~10 bytes
   const estimatedSize = 10 + (148 * utxos.length) + (34 * (outputs.length + 1)) // +1 for potential change
   const fee = Math.max(250, Math.ceil(estimatedSize * config.feePerByte)) // Minimum 250 sats
-  console.log('[DEBUG] Estimated fee:', fee, 'sats for estimated size:', estimatedSize, 'bytes')
 
   // Add change output if needed
   const change = totalInput - totalOutput - fee
-  console.log('[DEBUG] Change calculation:', { totalInput, totalOutput, fee, change })
-  if (change > 546) { // dust limit
+  if (change > 546) {
     const lockingScript = new P2PKH().lock(changeAddress)
-    tx.addOutput({
-      lockingScript,
-      satoshis: change,
-    })
-    console.log('[DEBUG] Added change output:', change, 'sats')
-  } else {
-    console.log('[DEBUG] No change output (dust or negative):', change)
+    tx.addOutput({ lockingScript, satoshis: change })
   }
 
-  // Sign transaction
-  try {
-    console.log('[DEBUG] Transaction before signing:', {
-      inputs: tx.inputs?.length || 0,
-      outputs: tx.outputs?.length || 0,
-    })
-    
-    // Sign using the private key
-    await tx.sign()
-    
-    console.log('[DEBUG] Transaction signed successfully')
-    console.log('[DEBUG] Checking if inputs have unlockingScripts...')
-    for (let i = 0; i < tx.inputs.length; i++) {
-      const input = tx.inputs[i]
-      console.log(`[DEBUG] Input ${i} unlockingScript:`, input.unlockingScript ? 'present' : 'MISSING')
-    }
-    
-    const txHex = tx.toHex()
-    console.log('[DEBUG] Transaction serialized to hex, length:', txHex.length)
-    return txHex
-  } catch (error: any) {
-    console.error('[DEBUG] Transaction signing failed:', error.message)
-    console.error('[DEBUG] Stack:', error.stack)
-    throw error
-  }
+  await tx.sign()
+  return tx.toHex()
 }
 
 /**

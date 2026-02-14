@@ -10,84 +10,64 @@ import {
   privateKeyFromWif,
   getScriptForAddress,
 } from '../bsv/crypto'
-import { getBalance as getOnChainBalance, getUtxos, getTxOutScript } from '../bsv/whatsonchain'
+import { getBalance as getOnChainBalance, getUtxos } from '../bsv/whatsonchain'
 import { config } from '../config'
 import type { UTXO } from '../bsv/crypto'
-import { generateApiKey, hashApiKey } from '../middleware/auth'
 
 /**
  * BSV Wallet Manager
- * 
+ *
  * Manages real BSV wallets with on-chain balance tracking.
  */
 export class WalletManager {
-
   /**
    * Create a new agent wallet with real BSV keys
-   * 
-   * ⚠️ SECURITY: Returns privateKey and apiKey ONCE on creation only.
-   * User MUST save these securely - they cannot be retrieved later.
    */
-  create(): AgentWallet & { privateKey: string; apiKey: string } {
+  create(): AgentWallet & { privateKey: string } {
     const db = getDb()
     const id = uuid()
 
-    // Generate real BSV private key
     const privKey = generatePrivateKey()
     const privateKeyWif = privKey.toWif()
     const publicKey = getPublicKeyHex(privKey)
     const address = deriveAddress(privKey)
 
-    // Encrypt private key for storage
     const encryptedPrivKey = encryptPrivateKey(privateKeyWif)
 
-    // Generate API key for authentication
-    const apiKey = generateApiKey()
-    const apiKeyHash = hashApiKey(apiKey)
-
     db.prepare(`
-      INSERT INTO wallets (id, publicKey, address, privateKey, apiKeyHash, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, publicKey, address, encryptedPrivKey, apiKeyHash, new Date().toISOString())
+      INSERT INTO wallets (id, publicKey, address, privateKey, createdAt)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, publicKey, address, encryptedPrivKey, new Date().toISOString())
 
     return {
       id,
       publicKey,
       address,
       createdAt: new Date().toISOString(),
-      privateKey: privateKeyWif, // ⚠️ Only returned on creation! Store securely.
-      apiKey, // ⚠️ Only returned on creation! Required for API access.
+      privateKey: privateKeyWif, // Only returned on creation.
     }
   }
 
   /**
    * Import wallet from WIF private key
-   * 
-   * ⚠️ SECURITY: Returns apiKey ONCE on import only.
    */
-  importFromWif(wif: string): AgentWallet & { apiKey: string } {
+  importFromWif(wif: string): AgentWallet {
     const db = getDb()
     const id = uuid()
+
     const privKey = privateKeyFromWif(wif)
     const publicKey = getPublicKeyHex(privKey)
     const address = deriveAddress(privKey)
     const encryptedPrivKey = encryptPrivateKey(wif)
-    
-    // Generate API key for authentication
-    const apiKey = generateApiKey()
-    const apiKeyHash = hashApiKey(apiKey)
-    
-    // Check if already exists
+
     const existing = db.prepare('SELECT id, publicKey, address, createdAt FROM wallets WHERE address = ?').get(address) as any
-    if (existing) {
-      // Wallet exists - cannot return API key for security
-      throw new Error('Wallet already exists. Cannot import duplicate.')
-    }
-    
-    db.prepare('INSERT INTO wallets (id, publicKey, address, privateKey, apiKeyHash, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, publicKey, address, encryptedPrivKey, apiKeyHash, new Date().toISOString())
-    
-    return { id, publicKey, address, createdAt: new Date().toISOString(), apiKey }
+    if (existing) return existing
+
+    const createdAt = new Date().toISOString()
+    db.prepare('INSERT INTO wallets (id, publicKey, address, privateKey, createdAt) VALUES (?, ?, ?, ?, ?)')
+      .run(id, publicKey, address, encryptedPrivKey, createdAt)
+
+    return { id, publicKey, address, createdAt }
   }
 
   /**
@@ -147,27 +127,21 @@ export class WalletManager {
 
     try {
       const wocUtxos = await getUtxos(wallet.address)
-      
-      // Convert to our UTXO format - derive script from address (P2PKH)
-      // This avoids rate limits from fetching each transaction
+
+      // Derive locking script from address (P2PKH) to avoid per-UTXO tx lookups.
       const script = getScriptForAddress(wallet.address)
-      
-      const utxos: UTXO[] = wocUtxos.map(wocUtxo => ({
-        txid: wocUtxo.tx_hash,
-        vout: wocUtxo.tx_pos,
-        amount: wocUtxo.value,
-        script, // Use derived P2PKH script
+
+      const utxos: UTXO[] = wocUtxos.map(w => ({
+        txid: w.tx_hash,
+        vout: w.tx_pos,
+        amount: w.value,
+        script,
       }))
 
-      // Update local UTXO cache
-      if (utxos.length > 0) {
-        this.syncUtxos(walletId, utxos)
-      }
-      
+      if (utxos.length > 0) this.syncUtxos(walletId, utxos)
       return utxos.length > 0 ? utxos : this.getCachedUtxos(walletId)
     } catch (error) {
-      console.error(`Failed to fetch UTXOs for ${wallet.address}:`, error)
-      // Fallback to cached UTXOs
+      console.error(`Failed to fetch UTXOs for ${wallet?.address}:`, error)
       return this.getCachedUtxos(walletId)
     }
   }
@@ -194,14 +168,14 @@ export class WalletManager {
   private getInternalBalance(walletId: string): number {
     const db = getDb()
 
-    // Deposits (faucet/funding)
     let deposits = 0
     try {
       const dep = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM deposits WHERE walletId = ?`).get(walletId) as any
       deposits = dep?.total || 0
-    } catch { /* table may not exist yet */ }
+    } catch {
+      /* table may not exist yet */
+    }
 
-    // Sum of received payments (released) minus sent payments
     const received = db.prepare(`
       SELECT COALESCE(SUM(amount - platformFee), 0) as total
       FROM payments WHERE sellerWalletId = ? AND status = 'released'
@@ -220,11 +194,9 @@ export class WalletManager {
    */
   private syncUtxos(walletId: string, utxos: UTXO[]): void {
     const db = getDb()
-    
-    // Mark all existing UTXOs as spent
-    db.prepare('UPDATE utxos SET spent = 1, spentAt = datetime(\'now\') WHERE walletId = ? AND spent = 0').run(walletId)
 
-    // Insert/update current UTXOs
+    db.prepare("UPDATE utxos SET spent = 1, spentAt = datetime('now') WHERE walletId = ? AND spent = 0").run(walletId)
+
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO utxos (id, walletId, txid, vout, amount, script, spent, createdAt)
       VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))

@@ -12,13 +12,18 @@
 import express from 'express'
 import { unlink } from 'fs/promises'
 import { existsSync } from 'fs'
+import { PrivateKey } from '@bsv/sdk'
 
 // Setup environment
 process.env.BSV_NETWORK = 'testnet'
-process.env.AGENTPAY_DEMO = 'false'  // Keep on-chain mode
-process.env.AGENTPAY_DEMO_SKIP_AUTH = 'true'  // Skip auth for testing
+process.env.AGENTPAY_DEMO = 'false' // Keep on-chain mode
 process.env.AGENTPAY_MASTER_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' // Test key
 process.env.PORT = '3100'
+
+// Platform escrow wallet (generated for this run)
+const platformPriv = PrivateKey.fromRandom()
+process.env.PLATFORM_WALLET_PRIVKEY = platformPriv.toWif()
+process.env.PLATFORM_WALLET_ADDRESS = platformPriv.toPublicKey().toAddress('testnet')
 
 const API_BASE = 'http://localhost:3100'
 const WOC_BASE = 'https://api.whatsonchain.com/v1/bsv/test'

@@ -65,16 +65,8 @@ export class PaymentEngine {
     const platformAddress = this.getPlatformEscrowAddress()
 
     try {
-      console.log('[PAYMENT DEBUG] Building escrow transaction...')
-      console.log('[PAYMENT DEBUG] UTXOs:', JSON.stringify(utxos, null, 2))
-      console.log('[PAYMENT DEBUG] Platform address:', platformAddress)
-      console.log('[PAYMENT DEBUG] Amount:', amount)
-      
       const txHex = await buildTransaction(utxos, [{ address: platformAddress, amount }], buyerWallet.address, buyerPrivKey)
-      console.log('[PAYMENT DEBUG] Transaction built successfully, hex length:', txHex.length)
-      
       const txId = await broadcastTx(txHex)
-      console.log('[PAYMENT DEBUG] Transaction broadcast successfully:', txId)
 
       db.prepare(`
         INSERT INTO payments (id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status, escrowTxId, createdAt)
@@ -83,8 +75,6 @@ export class PaymentEngine {
 
       return { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status: 'escrowed', txId, createdAt: now }
     } catch (error: any) {
-      console.error('[PAYMENT DEBUG] Error creating escrow transaction:', error)
-      console.error('[PAYMENT DEBUG] Error stack:', error.stack)
       throw new Error(`Failed to create escrow transaction: ${error.message}`)
     }
   }
@@ -96,7 +86,7 @@ export class PaymentEngine {
    * ⚠️ SECURITY: Internal use only. Not exposed via API.
    * Only callable from execute flow.
    */
-  async releaseInternal(paymentId: string): Promise<Payment | null> {
+  async release(paymentId: string): Promise<Payment | null> {
     const db = getDb()
     const payment = this.getById(paymentId)
     if (!payment || payment.status !== 'escrowed') return null
@@ -116,8 +106,7 @@ export class PaymentEngine {
       const platformPrivKey = privateKeyFromWif(this.getPlatformPrivateKey())
       const platformAddress = this.getPlatformEscrowAddress()
       const platformWallet = this.getOrCreatePlatformWallet()
-      const utxos = await this.wallets.getUtxos(platformWallet.id)
-      if (utxos.length === 0) throw new Error('Platform wallet has no UTXOs')
+      const utxos = await this.waitForUtxos(platformWallet.id)
 
       const sellerPayout = payment.amount - payment.platformFee
       const txHex = await buildTransaction(utxos, [{ address: sellerWallet.address, amount: sellerPayout }], platformAddress, platformPrivKey)
@@ -139,7 +128,7 @@ export class PaymentEngine {
    * ⚠️ SECURITY: Internal use only. Not exposed via API.
    * Only callable from execute flow.
    */
-  async refundInternal(paymentId: string): Promise<Payment | null> {
+  async refund(paymentId: string): Promise<Payment | null> {
     const db = getDb()
     const payment = this.getById(paymentId)
     if (!payment || payment.status !== 'escrowed') return null
@@ -159,8 +148,7 @@ export class PaymentEngine {
       const platformPrivKey = privateKeyFromWif(this.getPlatformPrivateKey())
       const platformAddress = this.getPlatformEscrowAddress()
       const platformWallet = this.getOrCreatePlatformWallet()
-      const utxos = await this.wallets.getUtxos(platformWallet.id)
-      if (utxos.length === 0) throw new Error('Platform wallet has no UTXOs')
+      const utxos = await this.waitForUtxos(platformWallet.id)
 
       const txHex = await buildTransaction(utxos, [{ address: buyerWallet.address, amount: payment.amount }], platformAddress, platformPrivKey)
       const refundTxId = await broadcastTx(txHex)
@@ -194,7 +182,11 @@ export class PaymentEngine {
    */
   getById(id: string): Payment | null {
     const db = getDb()
-    return db.prepare('SELECT * FROM payments WHERE id = ?').get(id) as Payment | null
+    const row = db.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any
+    if (!row) return null
+    // Normalize DB columns to API shape
+    if (!row.txId && row.escrowTxId) row.txId = row.escrowTxId
+    return row as Payment
   }
 
   /**
@@ -210,23 +202,38 @@ export class PaymentEngine {
     return db.prepare('SELECT * FROM payments WHERE buyerWalletId = ? OR sellerWalletId = ? ORDER BY createdAt DESC').all(walletId, walletId) as Payment[]
   }
 
+  private async waitForUtxos(walletId: string, attempts = 10, delayMs = 1500) {
+    for (let i = 0; i < attempts; i++) {
+      const utxos = await this.wallets.getUtxos(walletId)
+      if (utxos.length > 0) return utxos
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+    throw new Error('Platform wallet has no UTXOs')
+  }
+
   /**
    * Get or create platform escrow wallet
    */
   private getOrCreatePlatformWallet(): { id: string; address: string } {
     const db = getDb()
-    
+
+    const address = this.getPlatformEscrowAddress()
+
     // Check if platform wallet exists
-    const existing = db.prepare('SELECT id, address FROM wallets WHERE address = ?').get(this.getPlatformEscrowAddress()) as any
-    if (existing) {
-      return existing
+    const existing = db.prepare('SELECT id, address FROM wallets WHERE address = ?').get(address) as any
+    if (existing) return existing
+
+    // If platform private key is configured, import it so the DB wallet matches the escrow address
+    if (config.platformWallet.privateKey) {
+      const wallet = this.wallets.importFromWif(config.platformWallet.privateKey)
+      return { id: wallet.id, address: wallet.address }
     }
 
-    // Create platform wallet if it doesn't exist
+    // Fallback (dev only): create new random platform wallet (address will NOT be stable across runs)
     const wallet = this.wallets.create()
-    console.log('⚠️  Created new platform escrow wallet:', wallet.address)
-    console.log('⚠️  STORE THIS PRIVATE KEY SECURELY:', wallet.privateKey)
-    
+    console.warn('⚠️  Created new platform escrow wallet:', wallet.address)
+    console.warn('⚠️  STORE THIS PRIVATE KEY SECURELY:', wallet.privateKey)
+
     return { id: wallet.id, address: wallet.address }
   }
 
@@ -234,12 +241,15 @@ export class PaymentEngine {
    * Get platform escrow address
    */
   private getPlatformEscrowAddress(): string {
-    // For MVP: use env var or derive from master key
-    if (config.platformWallet.address) {
-      return config.platformWallet.address
+    if (config.platformWallet.address) return config.platformWallet.address
+
+    if (config.platformWallet.privateKey) {
+      const { deriveAddress, privateKeyFromWif } = require('../bsv/crypto')
+      const priv = privateKeyFromWif(config.platformWallet.privateKey)
+      return deriveAddress(priv)
     }
 
-    // Generate deterministic address from master key (not recommended for production!)
+    // Dev fallback: ephemeral random address
     const { generatePrivateKey, deriveAddress } = require('../bsv/crypto')
     const privKey = generatePrivateKey()
     return deriveAddress(privKey)
@@ -249,11 +259,9 @@ export class PaymentEngine {
    * Get platform private key (SECURE THIS!)
    */
   private getPlatformPrivateKey(): string {
-    if (config.platformWallet.privateKey) {
-      return config.platformWallet.privateKey
-    }
+    if (config.platformWallet.privateKey) return config.platformWallet.privateKey
 
-    // For dev/testing only - generate ephemeral key
+    // For dev/testing only - generate ephemeral key (will NOT match escrow address across calls)
     console.warn('⚠️  Using ephemeral platform key - NOT FOR PRODUCTION')
     const { generatePrivateKey } = require('../bsv/crypto')
     const privKey = generatePrivateKey()

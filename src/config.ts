@@ -50,12 +50,7 @@ export const config = {
   demoMode: isDemoMode,
 
   // Demo mode: skip authentication (for testing only)
-  // Can be enabled even in non-demo mode for testing purposes
-  demoSkipAuth: (() => {
-    const skipAuth = process.env.AGENTPAY_DEMO_SKIP_AUTH === 'true'
-    console.log('[CONFIG DEBUG] demoSkipAuth:', skipAuth, '(env value:', process.env.AGENTPAY_DEMO_SKIP_AUTH, ')')
-    return skipAuth
-  })(),
+  demoSkipAuth: isDemoMode && process.env.AGENTPAY_DEMO_SKIP_AUTH === 'true',
 
   // Minimum transaction fee (satoshis/byte)
   feePerByte: 1,
@@ -74,6 +69,16 @@ export const config = {
     privateKey: process.env.PLATFORM_WALLET_PRIVKEY,
     address: process.env.PLATFORM_WALLET_ADDRESS,
   },
+
+  // External wallet providers
+  handcash: {
+    appId: process.env.HANDCASH_APP_ID || '',
+    appSecret: process.env.HANDCASH_APP_SECRET || '',
+    redirectUrl: process.env.HANDCASH_REDIRECT_URL || 'http://localhost:3100/api/wallets/connect/handcash/callback',
+  },
+
+  // Frontend URL (for OAuth callbacks)
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
 }
 
 /**
