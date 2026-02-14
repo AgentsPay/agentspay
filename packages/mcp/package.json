@@ -1,0 +1,41 @@
+{
+  "name": "@agentspay/mcp",
+  "version": "0.3.0",
+  "description": "MCP (Model Context Protocol) server for AgentPay — let AI agents pay each other",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "agentspay-mcp": "./dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "keywords": [
+    "mcp",
+    "ai",
+    "agents",
+    "payments",
+    "model-context-protocol"
+  ],
+  "author": "d4rkpsych0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentspay/agentspay.git",
+    "directory": "packages/mcp"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3"
+  }
+}

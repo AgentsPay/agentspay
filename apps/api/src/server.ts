@@ -88,7 +88,7 @@ app.get('/api/wallets/connect/handcash', (_req, res) => {
     if (!appId || !appSecret) {
       return res.status(503).json({ error: 'HandCash Connect not configured. Set HANDCASH_APP_ID and HANDCASH_APP_SECRET.' })
     }
-    const sdk = getInstance({ appId, appSecret })
+    const sdk = getInstance({ appId, appSecret }) as any
     const redirectUrl = sdk.connect.getRedirectionUrl()
     res.json({ ok: true, authUrl: redirectUrl })
   } catch (err: any) {
@@ -104,7 +104,7 @@ app.get('/api/wallets/connect/handcash/callback', async (req, res) => {
     const appId = process.env.HANDCASH_APP_ID
     const appSecret = process.env.HANDCASH_APP_SECRET
     if (!appId || !appSecret) return res.status(503).json({ error: 'HandCash not configured' })
-    const sdk = getInstance({ appId, appSecret })
+    const sdk = getInstance({ appId, appSecret }) as any
     const account = sdk.connect.getAccountClient(authToken as string)
     const profile = await account.getCurrentProfile()
     const wallet = wallets.create()
@@ -250,6 +250,7 @@ app.get('/api/wallets/:id', authMiddleware, requireWalletMatch, async (req, res)
   if (!wallet) return res.status(404).json({ error: 'Wallet not found' })
   const balance = await wallets.getBalance(String(req.params.id))
   const balanceMnee = await mneeTokens.getBalance(wallet.address)
+  const limits = wallets.getLimits(String(req.params.id))
   res.json({ 
     ok: true, 
     wallet: { 
@@ -260,9 +261,32 @@ app.get('/api/wallets/:id', authMiddleware, requireWalletMatch, async (req, res)
       balances: {
         BSV: { amount: balance, formatted: CurrencyManager.format(balance, 'BSV') },
         MNEE: { amount: balanceMnee, formatted: CurrencyManager.format(balanceMnee, 'MNEE') }
-      }
+      },
+      ...limits,
     } 
   })
+})
+
+// ============ SPENDING LIMITS ============
+
+app.put('/api/wallets/:id/limits', authMiddleware, requireWalletMatch, (req, res) => {
+  try {
+    const { txLimit, sessionLimit, dailyLimit } = req.body
+    wallets.setLimits(String(req.params.id), { txLimit, sessionLimit, dailyLimit })
+    const updated = wallets.getLimits(String(req.params.id))
+    res.json({ ok: true, limits: updated })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+app.get('/api/wallets/:id/limits', authMiddleware, requireWalletMatch, (req, res) => {
+  try {
+    const limits = wallets.getLimits(String(req.params.id))
+    res.json({ ok: true, limits })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
 })
 
 // ============ CURRENCY ============
@@ -397,7 +421,7 @@ app.post('/api/execute/:serviceId', authMiddleware, async (req, res) => {
     return res.status(403).json({ error: 'Authenticated wallet does not match buyerWalletId' })
   }
 
-  const service = registry.getById(req.params.serviceId)
+  const service = registry.getById(String(req.params.serviceId))
 
   if (!service) return res.status(404).json({ error: 'Service not found' })
   if (!service.active) return res.status(400).json({ error: 'Service is inactive' })
@@ -928,7 +952,7 @@ app.patch('/api/identity', authMiddleware, (req, res) => {
 app.post('/api/identity/:address/attest', authMiddleware, async (req, res) => {
   const auth = (req as any).authWallet as { id: string; address: string }
   const { score, comment, anchorOnChain } = req.body
-  const toAddress = req.params.address
+  const toAddress = String(req.params.address)
 
   if (!score || score < 1 || score > 5) return res.status(400).json({ error: 'Score must be 1-5' })
   if (auth.address === toAddress) return res.status(400).json({ error: 'Cannot attest yourself' })

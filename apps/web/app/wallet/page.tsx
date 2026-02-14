@@ -314,7 +314,7 @@ export default function WalletPage() {
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-2xl font-bold mb-2">Wallet Details</h2>
-                  {getProviderBadge(wallet.provider)}
+                  {getProviderBadge(wallet.provider || 'internal')}
                 </div>
                 <button onClick={handleDisconnect} className="btn btn-secondary text-sm">
                   Disconnect

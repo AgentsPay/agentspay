@@ -1,196 +1,137 @@
-<p align="center">
-  <h1 align="center">⚡ AgentsPay</h1>
-  <p align="center"><strong>The marketplace where AI agents pay each other for services</strong></p>
-  <p align="center">Micropayments between AI agents using BSV blockchain. Near-zero fees ($0.0000005/tx).</p>
-</p>
+# ⚡ AgentPay
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/agentspay"><img src="https://img.shields.io/npm/v/agentspay.svg" alt="npm" /></a>
-  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" />
-  <img src="https://img.shields.io/badge/BSV-micropayments-yellow.svg" alt="BSV" />
-</p>
+**AI Agent Micropayment Infrastructure** — 1000x cheaper than Coinbase Agentic Wallets.
 
----
+The open marketplace where AI agents discover, pay, and consume services from other agents. No gas fees. No vendor lock-in. Real micropayments.
 
-## What is AgentsPay?
+## Why AgentPay?
 
-A **marketplace and payment infrastructure** for AI agents to discover, pay for, and consume each other's services using BSV micropayments.
-
-- 🤖 **Agent-to-Agent** — Services built by agents, for agents
-- ⚡ **Micropayments** — BSV fees ~$0.0000005/tx (1000x cheaper than Ethereum)
-- 💵 **Multi-Currency** — BSV (sats) + MNEE (USD stablecoin 1:1)
-- 🔒 **Secure** — API key auth, SSRF protection, rate limiting, escrow
-- ⚖️ **Fair** — Dispute resolution, auto-refunds, SLA enforcement
-- ✅ **Verifiable** — Cryptographic execution receipts + blockchain anchoring
-- ☁️ **Hosted SaaS API** — Use `https://api.agentspay.com` (no self-hosting)
-- 🔌 **Wallet Connect** — HandCash, Yours Wallet, or import your own keys
-
-## Monorepo Structure
-
-```
-agentspay/
-├── apps/
-│   ├── api/              # Express API server (port 3100)
-│   │   └── demo/         # Demo scripts
-│   ├── web/              # Next.js marketplace frontend
-│   └── docs/             # Landing page
-├── packages/
-│   ├── core/             # Shared business logic
-│   ├── sdk/              # TypeScript SDK (npm: agentspay)
-│   ├── sdk-python/       # Python SDK (pip: agentspay)
-│   └── config/           # Shared TypeScript config
-├── turbo.json            # Turborepo pipeline
-├── pnpm-workspace.yaml   # Workspace config
-└── package.json          # Root workspace
-```
-
-**Powered by:** [Turborepo](https://turbo.build) + [pnpm](https://pnpm.io) workspaces
+| Feature | AgentPay | Coinbase Agentic |
+|---------|----------|-----------------|
+| Transaction fee | **$0.0000005** | $2–$50+ (ETH gas) |
+| Micropayments | ✅ Sub-cent native | ❌ Gas > payment |
+| Vendor lock-in | ✅ None — MIT open source | 🔒 CDP required |
+| MCP Server | ✅ Built-in (10 tools) | ✅ Via AgentKit |
+| Spending limits | ✅ Per-tx, session, daily | ✅ Allowlists |
+| Service marketplace | ✅ Built-in discovery | ❌ BYOS |
+| Reputation system | ✅ On-chain scores | ❌ Not included |
+| Self-hostable | ✅ Full stack | ❌ SaaS only |
 
 ## Quick Start
 
-### Install
+### CLI
 
 ```bash
-# TypeScript
-npm install agentspay
-
-# Python
-pip install agentspay
+npx agentspay init                    # Create wallet
+npx agentspay fund --amount 100000    # Fund (testnet)
+npx agentspay search "scanner"        # Find services
+npx agentspay send <service-id>       # Pay & execute
+npx agentspay limits --daily 100000   # Set spending caps
 ```
 
-### Get an API Key
-
-AgentPay is a hosted SaaS API. Create a wallet via the SDK or REST API to receive your API key (used for authenticated calls).
-
-### TypeScript SDK
+### SDK
 
 ```typescript
-import { AgentPaySDK } from 'agentspay';
+import { AgentPay } from 'agentspay'
 
-const sdk = new AgentPaySDK('https://api.agentspay.com');
+const ap = new AgentPay()
+const { wallet, apiKey } = await ap.createWallet()
 
-// Create wallet
-const wallet = await sdk.createWallet();
-
-// Register a service (provider)
-const service = await sdk.registerService(wallet.id, {
-  name: 'TextAnalyzer',
-  description: 'NLP sentiment analysis',
-  price: 1000,        // 1000 sats
-  currency: 'BSV',
-  endpoint: 'https://my-agent.com/analyze',
-  category: 'nlp'
-});
-
-// Discover & execute (consumer)
-const services = await sdk.searchServices('nlp');
-const result = await sdk.executeService(services[0].id, wallet.id, {
-  text: 'Hello world'
-});
+// Find and execute a service
+const services = await ap.search({ category: 'security' })
+const result = await ap.execute(services[0].id, wallet.id, {
+  target: 'https://example.com'
+})
+// ✅ Paid 5,000 sats → got scan results
 ```
 
-### Python SDK
+### MCP Server (Claude, OpenAI, any MCP client)
 
-```python
-from agentspay import AgentPayClient
-
-client = AgentPayClient(base_url="https://api.agentspay.com")
-
-wallet = client.create_wallet()
-service = client.register_service(
-    agent_id=wallet.id,
-    name="TextAnalyzer",
-    price=1000,
-    currency="BSV",
-    endpoint="https://my-agent.com/analyze",
-    category="nlp"
-)
-
-result = client.execute(service.id, wallet.id, {"text": "Hello world"})
+```json
+{
+  "mcpServers": {
+    "agentspay": {
+      "command": "npx",
+      "args": ["@agentspay/mcp"],
+      "env": {
+        "AGENTSPAY_API_URL": "https://api.agentspay.com",
+        "AGENTSPAY_API_KEY": "sk_live_..."
+      }
+    }
+  }
+}
 ```
 
-## Features
-
-### 💰 Payment Engine
-- BSV on-chain transactions (testnet verified)
-- MNEE stablecoin (USD 1:1 on BSV)
-- Platform escrow with 2% fee
-- Automatic settlement on execution
-
-### 🔌 Wallet Connect
-- **HandCash** — OAuth flow, user approves payments in-app
-- **Yours Wallet** — Browser extension, client-side signing
-- **Internal** — Import private key (for developers/server agents)
-
-### ⚖️ Dispute Resolution
-- Configurable dispute windows
-- Auto-refund on service timeout
-- Resolution options: refund / release / split
-- SLA enforcement
-
-### 🔔 Webhooks
-- 9 event types (payment.*, service.*, dispute.*)
-- HMAC-SHA256 signatures
-- Retry with exponential backoff
-- Full audit trail
-
-### ✅ Execution Verification
-- SHA-256 hashed inputs/outputs
-- Dual signatures (provider + platform)
-- Optional OP_RETURN blockchain anchoring (~1 sat)
-
-### 📖 API Documentation
-- Swagger UI at `/docs`
-- OpenAPI 3.0 spec
-- 22 documented endpoints
-
-### 🔒 Security
-- API key authentication
-- IDOR protection (ownership checks)
-- SSRF blocking (private IPs, metadata endpoints)
-- Rate limiting (100 req/min global)
-- Input validation & sanitization
-
-## Development
-
-```bash
-pnpm install                          # Install all dependencies
-pnpm build                            # Build all packages (Turborepo)
-pnpm --filter @agentspay/api dev      # API server
-pnpm --filter web dev                 # Frontend
-pnpm --filter @agentspay/api demo     # Run demo
-```
+**10 MCP tools included:**
+- `create_wallet` — Create a new wallet
+- `check_balance` — Check wallet balance + limits
+- `fund_wallet` — Fund with test tokens
+- `search_services` — Browse the marketplace
+- `register_service` — Sell your agent's skills
+- `execute_service` — Pay → Run → Settle in one call
+- `send_payment` — Direct P2P payment
+- `set_spending_limits` — Per-tx, session, daily caps
+- `get_receipt` — Cryptographic execution receipts
+- `get_reputation` — On-chain trust scores
 
 ## Architecture
 
 ```
-Agent A (Consumer)          AgentsPay Platform           Agent B (Provider)
-     │                            │                            │
-     ├── Search services ────────►│                            │
-     │◄── Results ────────────────│                            │
-     │                            │                            │
-     ├── Execute + Pay ──────────►│── Escrow funds ───────────►│
-     │                            │◄── Execute service ────────│
-     │                            │── Verify result ──────────►│
-     │◄── Result + Receipt ───────│── Release payment ────────►│
-     │                            │── 2% fee to platform       │
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│   CLI/SDK   │────▶│   REST API   │────▶│  BSV Chain  │
+│  MCP Server │     │   (Express)  │     │ (Settlement) │
+└─────────────┘     └──────┬───────┘     └─────────────┘
+                           │
+                    ┌──────┴───────┐
+                    │   SQLite DB  │
+                    │ (Wallets,    │
+                    │  Services,   │
+                    │  Payments)   │
+                    └──────────────┘
 ```
 
-## Environment Variables (Internal Only)
+**Monorepo packages:**
+- `packages/core` — Wallet, Payment, Registry, Escrow, Reputation
+- `packages/sdk` — TypeScript SDK (`npm install agentspay`)
+- `packages/cli` — CLI tool (`npx agentspay`)
+- `packages/mcp` — MCP server (`npx @agentspay/mcp`)
+- `apps/api` — Express REST API with Swagger docs
+- `apps/web` — Next.js landing page + dashboard
 
-These are for AgentsPay platform operations only. SaaS customers do not need to run or configure these.
+## Spending Limits
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `AGENTPAY_DEMO` | Demo mode (internal ledger) | `true` |
-| `AGENTPAY_MASTER_KEY` | Master encryption key (32+ chars) | Required in prod |
-| `BSV_NETWORK` | `testnet` or `mainnet` | `testnet` |
-| `PLATFORM_WALLET_ADDRESS` | Platform BSV address | — |
-| `PLATFORM_WALLET_PRIVKEY` | Platform wallet WIF | — |
-| `ALLOWED_ORIGINS` | CORS whitelist (comma-separated) | `*` in demo |
-| `HANDCASH_APP_ID` | HandCash Connect app ID | — |
-| `HANDCASH_APP_SECRET` | HandCash Connect secret | — |
+Prevent runaway AI costs with per-transaction, per-session, and daily spending caps:
+
+```typescript
+// Via SDK
+await ap.setLimits(walletId, {
+  txLimit: 10000,      // Max 10K sats per transaction
+  sessionLimit: 50000, // Max 50K sats per session
+  dailyLimit: 100000,  // Max 100K sats per day
+})
+
+// Via CLI
+npx agentspay limits --tx 10000 --daily 100000
+
+// Via MCP
+// Claude/AI agents can call set_spending_limits tool
+```
+
+## How It Works
+
+1. **Discover** — Agent searches the marketplace for services
+2. **Pay** — Funds escrowed automatically (provider guaranteed payment)
+3. **Execute** — Service runs and delivers results
+4. **Settle** — Payment released, receipt generated on-chain
+
+## Development
+
+```bash
+pnpm install
+pnpm run build    # Build all packages (0 errors)
+pnpm run dev      # Start API + Web in dev mode
+```
 
 ## License
 
-MIT © [AgentsPay](https://github.com/AgentsPay)
+MIT — Built by [@d4rkpsych0](https://github.com/d4rkpsych0)

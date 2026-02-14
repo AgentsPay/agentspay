@@ -262,6 +262,117 @@ export class WalletManager {
     }
   }
 
+  // ============ SPENDING LIMITS ============
+
+  /**
+   * Set spending limits for a wallet
+   */
+  setLimits(walletId: string, limits: {
+    txLimit?: number | null;
+    sessionLimit?: number | null;
+    dailyLimit?: number | null;
+  }): void {
+    const db = getDb()
+    const wallet = this.getById(walletId)
+    if (!wallet) throw new Error('Wallet not found')
+
+    const fields: string[] = []
+    const values: any[] = []
+
+    if ('txLimit' in limits) {
+      fields.push('txLimit = ?')
+      values.push(limits.txLimit)
+    }
+    if ('sessionLimit' in limits) {
+      fields.push('sessionLimit = ?')
+      values.push(limits.sessionLimit)
+    }
+    if ('dailyLimit' in limits) {
+      fields.push('dailyLimit = ?')
+      values.push(limits.dailyLimit)
+    }
+
+    if (fields.length === 0) return
+
+    values.push(walletId)
+    db.prepare(`UPDATE wallets SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+  }
+
+  /**
+   * Get spending limits for a wallet
+   */
+  getLimits(walletId: string): {
+    txLimit: number | null;
+    sessionLimit: number | null;
+    dailyLimit: number | null;
+    dailySpent: number;
+  } {
+    const db = getDb()
+    const row = db.prepare(
+      'SELECT txLimit, sessionLimit, dailyLimit, dailySpent, dailyResetAt FROM wallets WHERE id = ?'
+    ).get(walletId) as any
+
+    if (!row) throw new Error('Wallet not found')
+
+    // Auto-reset daily counter if past midnight
+    const now = new Date()
+    const today = now.toISOString().substring(0, 10)
+    const lastReset = row.dailyResetAt ? row.dailyResetAt.substring(0, 10) : null
+
+    if (lastReset !== today) {
+      db.prepare("UPDATE wallets SET dailySpent = 0, dailyResetAt = datetime('now') WHERE id = ?").run(walletId)
+      return {
+        txLimit: row.txLimit,
+        sessionLimit: row.sessionLimit,
+        dailyLimit: row.dailyLimit,
+        dailySpent: 0,
+      }
+    }
+
+    return {
+      txLimit: row.txLimit,
+      sessionLimit: row.sessionLimit,
+      dailyLimit: row.dailyLimit,
+      dailySpent: row.dailySpent || 0,
+    }
+  }
+
+  /**
+   * Check if a transaction is within spending limits
+   * Returns { allowed: boolean; reason?: string }
+   */
+  checkLimits(walletId: string, amount: number): { allowed: boolean; reason?: string } {
+    const limits = this.getLimits(walletId)
+
+    // Check per-transaction limit
+    if (limits.txLimit !== null && amount > limits.txLimit) {
+      return {
+        allowed: false,
+        reason: `Transaction amount (${amount} sats) exceeds per-transaction limit (${limits.txLimit} sats)`,
+      }
+    }
+
+    // Check daily limit
+    if (limits.dailyLimit !== null && (limits.dailySpent + amount) > limits.dailyLimit) {
+      return {
+        allowed: false,
+        reason: `Transaction would exceed daily limit (${limits.dailySpent + amount}/${limits.dailyLimit} sats)`,
+      }
+    }
+
+    return { allowed: true }
+  }
+
+  /**
+   * Record spending against daily limit
+   */
+  recordSpending(walletId: string, amount: number): void {
+    const db = getDb()
+    // Ensure daily counter is current
+    this.getLimits(walletId)
+    db.prepare('UPDATE wallets SET dailySpent = dailySpent + ? WHERE id = ?').run(amount, walletId)
+  }
+
   /**
    * Get cached UTXOs from local database
    */

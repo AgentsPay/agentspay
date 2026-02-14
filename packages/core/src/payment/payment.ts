@@ -44,6 +44,15 @@ export class PaymentEngine {
       throw new Error(`Invalid ${currency} amount`)
     }
 
+    // Check spending limits before proceeding
+    const limitCheck = this.wallets.checkLimits(buyerWalletId, amount)
+    if (!limitCheck.allowed) {
+      throw new Error(`Spending limit exceeded: ${limitCheck.reason}`)
+    }
+
+    // Record spending against daily limit
+    this.wallets.recordSpending(buyerWalletId, amount)
+
     if (config.demoMode) {
       // Demo mode: internal ledger, no on-chain tx
       db.prepare(`

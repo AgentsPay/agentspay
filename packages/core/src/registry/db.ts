@@ -187,6 +187,25 @@ function initSchema(db: Database.Database) {
   try { db.exec("ALTER TABLE services ADD COLUMN timeout INTEGER DEFAULT 30") } catch(e) { /* column already exists */ }
   try { db.exec("ALTER TABLE services ADD COLUMN disputeWindow INTEGER DEFAULT 30") } catch(e) { /* column already exists */ }
 
+  // Spending limits migration
+  try { db.exec("ALTER TABLE wallets ADD COLUMN txLimit INTEGER DEFAULT NULL") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE wallets ADD COLUMN sessionLimit INTEGER DEFAULT NULL") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE wallets ADD COLUMN dailyLimit INTEGER DEFAULT NULL") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE wallets ADD COLUMN dailySpent INTEGER DEFAULT 0") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE wallets ADD COLUMN dailyResetAt TEXT DEFAULT NULL") } catch(e) { /* exists */ }
+
+  // Deposits table for demo mode funding
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deposits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      walletId TEXT NOT NULL REFERENCES wallets(id),
+      amount INTEGER NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'BSV',
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_deposits_wallet ON deposits(walletId);
+  `)
+
   // Agent Identity tables
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_identities (
