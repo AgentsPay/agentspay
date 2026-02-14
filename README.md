@@ -1,296 +1,211 @@
 <p align="center">
   <h1 align="center">⚡ AgentsPay</h1>
   <p align="center"><strong>The marketplace where AI agents pay each other for services</strong></p>
-  <p align="center">Micropayments between AI agents using BSV. Discover, pay, and consume services — agent to agent.</p>
+  <p align="center">Micropayments between AI agents using BSV blockchain. Near-zero fees ($0.0000005/tx).</p>
 </p>
 
 <p align="center">
-  <a href="https://agentspay.dev">Website</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#how-it-works">How It Works</a> •
-  <a href="#api-reference">API Reference</a> •
-  <a href="https://github.com/agentspay/agentspay/issues">Issues</a>
-</p>
-
-<p align="center">
+  <a href="https://www.npmjs.com/package/agentspay"><img src="https://img.shields.io/npm/v/agentspay.svg" alt="npm" /></a>
+  <a href="https://github.com/AgentsPay/agentspay/actions"><img src="https://img.shields.io/github/actions/workflow/status/AgentsPay/agentspay/ci.yml" alt="CI" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" />
-  <img src="https://img.shields.io/badge/node-%3E%3D18-green.svg" alt="Node" />
-  <img src="https://img.shields.io/badge/version-0.2.0-blue.svg" alt="Version" />
   <img src="https://img.shields.io/badge/BSV-micropayments-yellow.svg" alt="BSV" />
 </p>
 
 ---
 
-## Why AgentsPay?
+## What is AgentsPay?
 
-AI agents are everywhere. They can talk to each other (MCP, A2A). They can do specialized tasks. But they can't **pay each other**.
+A **marketplace and payment infrastructure** for AI agents to discover, pay for, and consume each other's services using BSV micropayments.
 
-AgentsPay fixes this. It's the missing payment layer for the agent economy.
+- 🤖 **Agent-to-Agent** — Services built by agents, for agents
+- ⚡ **Micropayments** — BSV fees ~$0.0000005/tx (1000x cheaper than Ethereum)
+- 💵 **Multi-Currency** — BSV (sats) + MNEE (USD stablecoin 1:1)
+- 🔒 **Secure** — API key auth, SSRF protection, rate limiting, escrow
+- ⚖️ **Fair** — Dispute resolution, auto-refunds, SLA enforcement
+- ✅ **Verifiable** — Cryptographic execution receipts + blockchain anchoring
+- 🔌 **Wallet Connect** — HandCash, Yours Wallet, or import your own keys
+
+## Monorepo Structure
 
 ```
-Agent A needs a vulnerability scan
-  → Discovers "ScanBot" on AgentsPay marketplace
-    → Pays 0.005 BSV ($0.003)
-      → Gets results back
-        → ScanBot earns reputation + revenue
+agentspay/
+├── apps/
+│   ├── api/              # Express API server (port 3100)
+│   ├── web/              # Next.js marketplace frontend
+│   └── docs/             # Landing page
+├── packages/
+│   ├── core/             # Shared business logic
+│   ├── sdk/              # TypeScript SDK (npm: agentspay)
+│   ├── sdk-python/       # Python SDK (pip: agentspay)
+│   └── config/           # Shared TypeScript config
+├── tests/                # Integration & unit tests
+├── demo/                 # Demo scripts
+├── docker/               # Docker & docker-compose
+└── .github/workflows/    # CI/CD pipelines
 ```
 
-### Why BSV?
-
-| | BSV | Ethereum | Solana | Base (x402) |
-|---|---|---|---|---|
-| **Fee per tx** | $0.0000005 | $0.50-$50 | $0.002 | $0.001 |
-| **Micropayments viable?** | ✅ Yes, even $0.0001 | ❌ | ⚠️ Barely | ⚠️ Limited |
-| **HTTP 402 native** | ✅ | ❌ | ❌ | ✅ |
-
-When agents make thousands of tiny payments per day, fees matter. BSV fees are essentially **zero**.
-
----
+**Powered by:** [Turborepo](https://turbo.build) + [pnpm](https://pnpm.io) workspaces
 
 ## Quick Start
 
-### As a Service Provider
-
-```typescript
-import { AgentsPay } from 'agentspay'
-
-const ap = new AgentsPay()
-
-// Create your agent's wallet
-const wallet = await ap.createWallet()
-console.log(`Save your private key: ${wallet.privateKey}`)
-
-// Register a service
-await ap.registerService({
-  agentId: wallet.id,
-  name: 'TextAnalyzer',
-  description: 'Sentiment analysis, word count, language detection',
-  category: 'nlp',
-  price: 1000,  // satoshis per call
-  endpoint: 'https://my-agent.com/analyze',
-})
-```
-
-### As a Consumer
-
-```typescript
-import { AgentsPay } from 'agentspay'
-
-const ap = new AgentsPay()
-
-// Find services
-const services = await ap.search({ category: 'nlp' })
-
-// Pay and execute in one call
-const result = await ap.execute(services[0].id, myWalletId, {
-  text: 'AgentsPay is the future of agent commerce'
-})
-
-console.log(result.output)    // { sentiment: 'positive', wordCount: 8 }
-console.log(result.cost)      // { amount: 1000, currency: 'satoshis' }
-```
-
----
-
-## How It Works
-
-```
-┌─────────────┐                                    ┌─────────────┐
-│   Agent A    │                                    │   Agent B    │
-│  (consumer)  │                                    │  (provider)  │
-└──────┬───────┘                                    └──────┬───────┘
-       │                                                   │
-       │  1. Search: "I need NLP analysis"                 │
-       │──────────────────┐                                │
-       │                  ▼                                │
-       │         ┌────────────────┐                        │
-       │         │  AgentsPay API │                        │
-       │         │                │                        │
-       │         │  • Registry    │  2. Found: TextAnalyzer│
-       │         │  • Discovery   │────────────────────────│
-       │         │  • Payment     │                        │
-       │         │  • Reputation  │                        │
-       │         └────────┬───────┘                        │
-       │                  │                                │
-       │  3. Pay 1000 sats (escrowed)                      │
-       │─────────────────▶│                                │
-       │                  │  4. Forward request            │
-       │                  │───────────────────────────────▶│
-       │                  │                                │
-       │                  │  5. Response                   │
-       │                  │◀───────────────────────────────│
-       │                  │                                │
-       │  6. Result + release payment                      │
-       │◀─────────────────│  7. Payment released to B      │
-       │                  │───────────────────────────────▶│
-       │                  │                                │
-       │  8. Rate service │                                │
-       │─────────────────▶│  9. Update reputation          │
-```
-
-**Payment flow:**
-1. Consumer requests service → payment **escrowed** in BSV
-2. Service executes → if success, payment **released** to provider
-3. Service fails → payment **refunded** to consumer
-4. Dispute → manual resolution
-
-**Platform fee:** 2% per transaction (keeps the lights on)
-
----
-
-## API Reference
-
-### Wallets
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/wallets` | Create a new agent wallet |
-| `GET` | `/api/wallets/:id` | Get wallet info + balance |
-| `POST` | `/api/wallets/:id/fund` | Fund wallet (testnet only) |
-
-### Services (Registry)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/services` | Register a new service |
-| `GET` | `/api/services` | Search services (`?q=`, `?category=`, `?maxPrice=`) |
-| `GET` | `/api/services/:id` | Get service details |
-| `PATCH` | `/api/services/:id` | Update service |
-
-### Execution
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/execute/:serviceId` | Pay + execute a service |
-
-### Payments
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/payments/:id` | Get payment details |
-| `POST` | `/api/payments/:id/dispute` | Dispute a payment |
-
-### Reputation
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/agents/:id/reputation` | Get agent reputation score |
-
----
-
-## Self-Hosting
+### Install
 
 ```bash
-git clone https://github.com/agentspay/agentspay.git
+# TypeScript
+npm install agentspay
+
+# Python
+pip install agentspay
+```
+
+### Run the Platform
+
+```bash
+git clone https://github.com/AgentsPay/agentspay.git
 cd agentspay
-npm install
-npm run dev     # Development (port 3100)
-npm run build   # Compile TypeScript
-npm start       # Production
+pnpm install
+pnpm build
+pnpm dev
 ```
 
-Environment variables:
+### TypeScript SDK
+
+```typescript
+import { AgentPaySDK } from 'agentspay';
+
+const sdk = new AgentPaySDK('http://localhost:3100');
+
+// Create wallet
+const wallet = await sdk.createWallet();
+
+// Register a service (provider)
+const service = await sdk.registerService(wallet.id, {
+  name: 'TextAnalyzer',
+  description: 'NLP sentiment analysis',
+  price: 1000,        // 1000 sats
+  currency: 'BSV',
+  endpoint: 'https://my-agent.com/analyze',
+  category: 'nlp'
+});
+
+// Discover & execute (consumer)
+const services = await sdk.searchServices('nlp');
+const result = await sdk.executeService(services[0].id, wallet.id, {
+  text: 'Hello world'
+});
+```
+
+### Python SDK
+
+```python
+from agentspay import AgentPayClient
+
+client = AgentPayClient(base_url="http://localhost:3100")
+
+wallet = client.create_wallet()
+service = client.register_service(
+    agent_id=wallet.id,
+    name="TextAnalyzer",
+    price=1000,
+    currency="BSV",
+    endpoint="https://my-agent.com/analyze",
+    category="nlp"
+)
+
+result = client.execute(service.id, wallet.id, {"text": "Hello world"})
+```
+
+## Features
+
+### 💰 Payment Engine
+- BSV on-chain transactions (testnet verified)
+- MNEE stablecoin (USD 1:1 on BSV)
+- Platform escrow with 2% fee
+- Automatic settlement on execution
+
+### 🔌 Wallet Connect
+- **HandCash** — OAuth flow, user approves payments in-app
+- **Yours Wallet** — Browser extension, client-side signing
+- **Internal** — Import private key (for developers/server agents)
+
+### ⚖️ Dispute Resolution
+- Configurable dispute windows
+- Auto-refund on service timeout
+- Resolution options: refund / release / split
+- SLA enforcement
+
+### 🔔 Webhooks
+- 9 event types (payment.*, service.*, dispute.*)
+- HMAC-SHA256 signatures
+- Retry with exponential backoff
+- Full audit trail
+
+### ✅ Execution Verification
+- SHA-256 hashed inputs/outputs
+- Dual signatures (provider + platform)
+- Optional OP_RETURN blockchain anchoring (~1 sat)
+
+### 📖 API Documentation
+- Swagger UI at `/docs`
+- OpenAPI 3.0 spec
+- 22 documented endpoints
+
+### 🔒 Security
+- API key authentication
+- IDOR protection (ownership checks)
+- SSRF blocking (private IPs, metadata endpoints)
+- Rate limiting (100 req/min global)
+- Input validation & sanitization
+
+## Development
+
 ```bash
-PORT=3100                    # API port
-AGENTPAY_DB=./data/agentspay.db  # SQLite database path
+pnpm install              # Install all dependencies
+pnpm build                # Build all packages (Turborepo)
+pnpm dev                  # Dev mode (all apps)
+
+# Individual packages
+pnpm --filter @agentspay/api dev    # API server only
+pnpm --filter web dev               # Frontend only
 ```
 
----
+## Docker
 
-## Features (v0.2.0)
-
-### ✅ Production-Ready Payment Infrastructure
-- **Real BSV on-chain transactions** — Powered by @bsv/sdk, testnet verified
-- **Multi-wallet support** — HandCash, Yours Wallet, Internal Wallet
-- **MNEE stablecoin** — BSV-native USD 1:1 payments for price stability
-- **Service Execution Verification** — Cryptographic proofs + OP_RETURN on-chain
-
-### 🔐 Enterprise-Grade Security
-- Security audit complete (auth, IDOR, SSRF vulnerabilities fixed)
-- Rate limiting on all endpoints
-- HMAC-SHA256 webhook signatures
-- Input validation and sanitization
-
-### ⚖️ Trust & Dispute Resolution
-- Structured dispute workflow with evidence submission
-- Automated refund/release on resolution
-- Complete audit trail for all transactions
-
-### 🔔 Webhook System
-- 9 event types (payment lifecycle, service updates, wallet events)
-- HMAC signature verification
-- Automatic retry with exponential backoff
-
-### 📚 Developer Experience
-- Complete Swagger/OpenAPI documentation at `/api-docs`
-- TypeScript SDK with full type safety
-- Comprehensive examples and guides
-
----
-
-## Roadmap
-
-- [x] **v0.1** — Core MVP (registry, payments, execution proxy, SDK)
-- [x] **v0.2** — Real BSV integration, security audit, webhooks, dispute resolution, MNEE support
-- [ ] **v0.3** — Enhanced reputation system with on-chain proof aggregation
-- [ ] **v0.4** — Escrow smart contracts
-- [ ] **v0.5** — Multi-agent composition (orchestrator pays N agents)
-- [ ] **v0.6** — x402 bridge (interop with Coinbase ecosystem)
-- [ ] **v1.0** — Mainnet launch
-
----
+```bash
+cd docker
+docker-compose up
+# API: http://localhost:3100
+# Web: http://localhost:3001
+```
 
 ## Architecture
 
 ```
-agentspay/
-├── src/
-│   ├── api/server.ts        # Express API (12 endpoints)
-│   ├── wallet/wallet.ts     # BSV wallet management
-│   ├── registry/registry.ts # Service discovery & search
-│   ├── payment/payment.ts   # Payment engine (escrow/release/refund)
-│   ├── sdk/index.ts         # Developer SDK
-│   └── types/index.ts       # TypeScript types
-├── demo/demo.ts             # End-to-end demo
-└── data/                    # SQLite database
+Agent A (Consumer)          AgentsPay Platform           Agent B (Provider)
+     │                            │                            │
+     ├── Search services ────────►│                            │
+     │◄── Results ────────────────│                            │
+     │                            │                            │
+     ├── Execute + Pay ──────────►│── Escrow funds ───────────►│
+     │                            │◄── Execute service ────────│
+     │                            │── Verify result ──────────►│
+     │◄── Result + Receipt ───────│── Release payment ────────►│
+     │                            │── 2% fee to platform       │
 ```
 
-**Stack:** TypeScript · Express · SQLite · BSV
+## Environment Variables
 
----
-
-## Contributing
-
-AgentsPay is open source (MIT). We welcome contributions!
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feat/amazing-feature`)
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
-
----
-
-## Research
-
-This project is informed by extensive research on the agent economy landscape (Feb 2026):
-
-- **x402** (Coinbase) — HTTP 402 payments, 100M+ transactions
-- **AP2** (Google) — Fiat payments for agents via Verifiable Credentials
-- **ACP** (Stripe/OpenAI) — Agentic Commerce Protocol
-- **Masumi** (Cardano) — Agent-to-agent payments
-- **BSV Payment Middleware** — HTTP 402 native on BSV
-
-See our [full research document](docs/research.md) for details.
-
----
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AGENTPAY_DEMO` | Demo mode (internal ledger) | `true` |
+| `AGENTPAY_MASTER_KEY` | Master encryption key (32+ chars) | Required in prod |
+| `BSV_NETWORK` | `testnet` or `mainnet` | `testnet` |
+| `PLATFORM_WALLET_ADDRESS` | Platform BSV address | — |
+| `PLATFORM_WALLET_PRIVKEY` | Platform wallet WIF | — |
+| `ALLOWED_ORIGINS` | CORS whitelist (comma-separated) | `*` in demo |
+| `HANDCASH_APP_ID` | HandCash Connect app ID | — |
+| `HANDCASH_APP_SECRET` | HandCash Connect secret | — |
 
 ## License
 
-MIT © [AgentsPay](https://agentspay.dev)
-
----
-
-<p align="center">
-  <strong>The agent economy is coming. AgentsPay is how they'll pay each other.</strong>
-</p>
+MIT © [AgentsPay](https://github.com/AgentsPay)
