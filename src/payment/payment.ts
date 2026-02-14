@@ -1,15 +1,21 @@
 import { v4 as uuid } from 'uuid'
 import { getDb } from '../registry/db'
 import { PLATFORM_FEE_RATE } from '../types'
-import type { Payment } from '../types'
+import type { Payment, Currency } from '../types'
 import { WalletManager } from '../wallet/wallet'
 import { buildTransaction, privateKeyFromWif, getTxId, generatePrivateKey, deriveAddress } from '../bsv/crypto'
 import { broadcastTx } from '../bsv/whatsonchain'
 import { config } from '../config'
 import { webhookDelivery } from '../webhooks/delivery'
+import { mneeTokens } from '../bsv/mnee'
+import { CurrencyManager } from '../currency/currency'
 
 /**
- * Payment Engine with Real BSV Transactions
+ * Payment Engine with Multi-Currency Support
+ * 
+ * Supports:
+ * - BSV (satoshis) - Native blockchain currency
+ * - MNEE (USD cents) - 1Sat Ordinals BSV-21 stablecoin token
  * 
  * Flow:
  * 1. Buyer requests execution → payment created as 'pending'
@@ -25,10 +31,10 @@ export class PaymentEngine {
   private wallets = new WalletManager()
 
   /**
-   * Create a payment (escrow funds on-chain)
-   * Buyer must send funds to platform escrow address
+   * Create a payment (escrow funds)
+   * Supports both BSV (satoshis) and MNEE (USD cents)
    */
-  async create(serviceId: string, buyerWalletId: string, sellerWalletId: string, amount: number): Promise<Payment> {
+  async create(serviceId: string, buyerWalletId: string, sellerWalletId: string, amount: number, currency: Currency = 'BSV'): Promise<Payment> {
     const db = getDb()
     const id = uuid()
     const platformFee = Math.ceil(amount * PLATFORM_FEE_RATE)
@@ -48,6 +54,7 @@ export class PaymentEngine {
       const payment: Payment = {
         id, serviceId, buyerWalletId, sellerWalletId,
         amount, platformFee, status: 'escrowed',
+        currency: 'BSV',
         txId: `demo-${id.slice(0,8)}`,
         createdAt: now,
       }
@@ -84,7 +91,7 @@ export class PaymentEngine {
         VALUES (?, ?, ?, ?, ?, ?, 'escrowed', ?, ?)
       `).run(id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, txId, now)
 
-      const payment: Payment = { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, status: 'escrowed', txId, createdAt: now }
+      const payment: Payment = { id, serviceId, buyerWalletId, sellerWalletId, amount, platformFee, currency: 'BSV', status: 'escrowed', txId, createdAt: now }
 
       // Trigger webhooks
       webhookDelivery.trigger('payment.created', payment).catch(console.error)

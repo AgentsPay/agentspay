@@ -1,11 +1,14 @@
 // AgentPay Core Types
 
+export type Currency = 'BSV' | 'MNEE'
+
 export interface AgentWallet {
   id: string
   publicKey: string
   address: string
   createdAt: string
-  balance?: number // satoshis
+  balance?: number // satoshis (BSV)
+  balanceMnee?: number // cents (MNEE)
 }
 
 export interface Service {
@@ -14,7 +17,8 @@ export interface Service {
   name: string
   description: string
   category: string
-  price: number          // satoshis per call
+  price: number          // amount per call (satoshis for BSV, cents for MNEE)
+  currency: Currency     // 'BSV' or 'MNEE'
   endpoint: string       // URL donde el agente provider escucha
   method: 'POST' | 'GET'
   inputSchema?: object   // JSON schema del input esperado
@@ -31,11 +35,12 @@ export interface Payment {
   serviceId: string
   buyerWalletId: string
   sellerWalletId: string
-  amount: number         // satoshis
-  platformFee: number    // satoshis (2%)
+  amount: number         // amount (satoshis for BSV, cents for MNEE)
+  platformFee: number    // platform fee (satoshis for BSV, cents for MNEE) - 2%
+  currency: Currency     // 'BSV' or 'MNEE'
   status: 'pending' | 'escrowed' | 'released' | 'disputed' | 'refunded'
   disputeStatus?: string // 'disputed' | 'no_dispute' | resolution status
-  txId?: string          // BSV transaction id
+  txId?: string          // Transaction id (BSV txid or MNEE token transfer id)
   createdAt: string
   completedAt?: string
 }
@@ -85,6 +90,21 @@ export interface Dispute {
   splitPercent?: number
   resolvedAt?: string
   createdAt: string
+}
+
+export interface ExecutionReceipt {
+  id: string
+  paymentId: string
+  serviceId: string
+  inputHash: string
+  outputHash: string
+  timestamp: number
+  executionTimeMs: number
+  providerSignature: string
+  platformSignature: string
+  receiptHash: string
+  blockchainTxId?: string
+  blockchainAnchoredAt?: string
 }
 
 export const PLATFORM_FEE_RATE = 0.02 // 2%

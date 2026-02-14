@@ -33,6 +33,7 @@ function initSchema(db: Database.Database) {
       description TEXT NOT NULL,
       category TEXT NOT NULL DEFAULT 'general',
       price INTEGER NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'BSV',
       endpoint TEXT NOT NULL,
       method TEXT NOT NULL DEFAULT 'POST',
       inputSchema TEXT,
@@ -51,6 +52,7 @@ function initSchema(db: Database.Database) {
       sellerWalletId TEXT NOT NULL REFERENCES wallets(id),
       amount INTEGER NOT NULL,
       platformFee INTEGER NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'BSV',
       status TEXT NOT NULL DEFAULT 'pending',
       disputeStatus TEXT,
       txId TEXT,
@@ -143,5 +145,37 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook ON webhook_deliveries(webhookId);
     CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries(status);
     CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry ON webhook_deliveries(status, nextRetryAt);
+
+    CREATE TABLE IF NOT EXISTS execution_receipts (
+      id TEXT PRIMARY KEY,
+      paymentId TEXT NOT NULL UNIQUE REFERENCES payments(id),
+      serviceId TEXT NOT NULL REFERENCES services(id),
+      inputHash TEXT NOT NULL,
+      outputHash TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      executionTimeMs INTEGER NOT NULL,
+      providerSignature TEXT NOT NULL,
+      platformSignature TEXT NOT NULL,
+      receiptHash TEXT NOT NULL UNIQUE,
+      blockchainTxId TEXT,
+      blockchainAnchoredAt TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_receipts_payment ON execution_receipts(paymentId);
+    CREATE INDEX IF NOT EXISTS idx_receipts_service ON execution_receipts(serviceId);
+    CREATE INDEX IF NOT EXISTS idx_receipts_hash ON execution_receipts(receiptHash);
+
+    -- MNEE token ledger for demo mode
+    CREATE TABLE IF NOT EXISTS mnee_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      address TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      txid TEXT NOT NULL,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mnee_ledger_address ON mnee_ledger(address);
+    CREATE INDEX IF NOT EXISTS idx_mnee_ledger_txid ON mnee_ledger(txid);
   `)
 }

@@ -10,6 +10,7 @@ import { WebhookManager } from '../webhooks/webhook'
 import { webhookDelivery } from '../webhooks/delivery'
 import { DisputeManager } from '../disputes/dispute'
 import { setupSwagger } from '../docs/swagger'
+import { VerificationManager } from '../verification/verification'
 
 const app = express()
 app.disable('x-powered-by')
@@ -35,6 +36,7 @@ const registry = new Registry()
 const payments = new PaymentEngine()
 const webhooks = new WebhookManager()
 const disputes = new DisputeManager()
+const verification = new VerificationManager()
 
 function getApiKey(req: express.Request): string | null {
   const key = req.header('x-api-key') || req.header('authorization')
@@ -265,15 +267,24 @@ app.post('/api/execute/:serviceId', async (req, res) => {
       const db = getDb()
       db.prepare('UPDATE payments SET completedAt = ? WHERE id = ?').run(new Date().toISOString(), payment.id)
 
+      // Create execution receipt (cryptographic proof)
+      const receipt = await verification.createReceipt(
+        payment,
+        (input as Record<string, unknown>) || ({} as Record<string, unknown>),
+        (output as Record<string, unknown>) || ({} as Record<string, unknown>),
+        executionTimeMs
+      )
+
       // Release payment immediately (buyer has dispute window to file dispute)
       await payments.release(payment.id)
 
-      // Trigger service.executed webhook
+      // Trigger service.executed webhook (include receipt)
       webhookDelivery.trigger('service.executed', {
         serviceId: service.id,
         paymentId: payment.id,
         executionTimeMs,
         output,
+        receipt,
       }).catch(console.error)
 
       // Check for expired dispute windows
@@ -291,6 +302,7 @@ app.post('/api/execute/:serviceId', async (req, res) => {
         },
         txId: payment.txId,
         disputeWindowMinutes: service.disputeWindow || 30,
+        receipt,
       })
     } catch (e: any) {
       // Handle timeout or service failure
@@ -524,6 +536,37 @@ app.delete('/api/webhooks/:id', requireApiKey, (req, res) => {
     res.json({ ok: true })
   } catch (e: any) {
     res.status(400).json({ error: e.message })
+  }
+})
+
+// ============ RECEIPTS (Execution Verification) ============
+
+app.get('/api/receipts/:paymentId', (req, res) => {
+  try {
+    const receipt = verification.getReceipt(String(req.params.paymentId))
+    if (!receipt) {
+      return res.status(404).json({ error: 'Receipt not found' })
+    }
+    res.json({ ok: true, receipt })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/api/receipts/:paymentId/verify', async (req, res) => {
+  try {
+    const receipt = verification.getReceipt(String(req.params.paymentId))
+    if (!receipt) {
+      return res.status(404).json({ error: 'Receipt not found' })
+    }
+
+    const result = await verification.verifyReceipt(receipt)
+    res.json({
+      ok: true,
+      verification: result,
+    })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
   }
 })
 
