@@ -20,7 +20,25 @@ import { apiRateLimit } from './middleware/rateLimit'
 
 const app = express()
 app.disable('x-powered-by')
-app.use(cors())
+
+// CORS configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || []
+const isDemoMode = process.env.AGENTPAY_DEMO === 'true'
+
+if (isDemoMode && allowedOrigins.length === 0) {
+  // Demo mode: allow all origins
+  app.use(cors())
+} else if (allowedOrigins.length > 0) {
+  // Production: allow specific origins with credentials
+  app.use(cors({
+    origin: allowedOrigins,
+    credentials: true
+  }))
+} else {
+  // No ALLOWED_ORIGINS set and not demo mode - allow all (dev default)
+  app.use(cors())
+}
+
 app.use(express.json())
 
 // Setup Swagger UI documentation at /docs
@@ -404,13 +422,29 @@ app.post('/api/execute/:serviceId', async (req, res) => {
 
 // ============ PAYMENTS ============
 
-app.get('/api/payments/:id', (req, res) => {
+app.get('/api/payments/:id', authMiddleware, (req, res) => {
   const payment = payments.getById(String(req.params.id))
   if (!payment) return res.status(404).json({ error: 'Payment not found' })
+  
+  // Verify user is buyer or seller
+  const auth = (req as any).authWallet as { id: string }
+  if (payment.buyerWalletId !== auth.id && payment.sellerWalletId !== auth.id) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  
   res.json({ ok: true, payment })
 })
 
-app.post('/api/payments/:id/dispute', (req, res) => {
+app.post('/api/payments/:id/dispute', authMiddleware, (req, res) => {
+  const paymentRecord = payments.getById(String(req.params.id))
+  if (!paymentRecord) return res.status(404).json({ error: 'Payment not found' })
+  
+  // Verify user is the buyer
+  const auth = (req as any).authWallet as { id: string }
+  if (paymentRecord.buyerWalletId !== auth.id) {
+    return res.status(403).json({ error: 'Only the buyer can dispute this payment' })
+  }
+  
   const payment = payments.dispute(String(req.params.id))
   if (!payment) return res.status(400).json({ error: 'Cannot dispute this payment' })
   res.json({ ok: true, payment })
@@ -462,8 +496,18 @@ app.get('/api/disputes', authMiddleware, (req, res) => {
 
 app.post('/api/disputes/:id/resolve', authMiddleware, (req, res) => {
   try {
-    // TODO: Add admin check here (for now, any authenticated user can resolve)
-    // In production, this should be restricted to platform admins
+    // Admin check: only platform master key can resolve disputes
+    const adminKey = req.headers['x-admin-key']
+    const masterKey = process.env.AGENTPAY_MASTER_KEY
+    
+    if (!masterKey) {
+      return res.status(503).json({ error: 'Master key not configured' })
+    }
+    
+    if (adminKey !== masterKey) {
+      return res.status(403).json({ error: 'Admin privileges required. Provide valid X-Admin-Key header.' })
+    }
+    
     const { resolution, splitPercent } = req.body
 
     if (!resolution || !['refund', 'release', 'split'].includes(resolution)) {
@@ -660,6 +704,19 @@ app.use((err: any, _req: express.Request, res: express.Response, next: express.N
     return res.status(400).json({ error: 'Invalid JSON' })
   }
   return next(err)
+})
+
+// Global error handler - NEVER expose stack traces in production
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('Unhandled error:', err)
+  
+  // In demo mode, return error message (but never stack traces)
+  if (process.env.AGENTPAY_DEMO === 'true') {
+    return res.status(500).json({ error: err.message || 'Internal server error' })
+  }
+  
+  // In production, only return generic error
+  res.status(500).json({ error: 'Internal server error' })
 })
 
 const PORT = Number(process.env.PORT) || 3100

@@ -178,4 +178,12 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_mnee_ledger_address ON mnee_ledger(address);
     CREATE INDEX IF NOT EXISTS idx_mnee_ledger_txid ON mnee_ledger(txid);
   `)
+
+  // Migration: Add missing columns to existing tables
+  // SQLite doesn't support IF NOT EXISTS on ALTER TABLE, so we use try/catch
+  try { db.exec("ALTER TABLE payments ADD COLUMN disputeStatus TEXT DEFAULT 'none'") } catch(e) { /* column already exists */ }
+  try { db.exec("ALTER TABLE payments ADD COLUMN completedAt TEXT") } catch(e) { /* column already exists */ }
+  try { db.exec("ALTER TABLE services ADD COLUMN currency TEXT DEFAULT 'BSV'") } catch(e) { /* column already exists */ }
+  try { db.exec("ALTER TABLE services ADD COLUMN timeout INTEGER DEFAULT 30000") } catch(e) { /* column already exists */ }
+  try { db.exec("ALTER TABLE services ADD COLUMN disputeWindow INTEGER DEFAULT 1800000") } catch(e) { /* column already exists */ }
 }
