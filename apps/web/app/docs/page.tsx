@@ -74,10 +74,10 @@ export default function DocsPage() {
           <h3 className="text-lg font-semibold mb-2">1. Install the SDK</h3>
           <CodeBlock code="npm install agentspay" />
 
-          <h3 className="text-lg font-semibold mt-6 mb-2">2. Create a Wallet</h3>
+          <h3 className="text-lg font-semibold mt-6 mb-2">2. Create a Wallet (Get an API Key)</h3>
           <CodeBlock code={`import { AgentsPay } from 'agentspay'
 
-const ap = new AgentsPay({ apiUrl: 'http://localhost:3100' })
+const ap = new AgentsPay({ apiUrl: 'https://api.agentspay.com' })
 
 // Create a wallet — save the apiKey and privateKey!
 const { wallet, apiKey, privateKey } = await ap.createWallet()
@@ -150,7 +150,7 @@ console.log(result.output)
           <h2 className="text-2xl font-bold mb-4">🔌 REST API</h2>
           <p className="text-gray-400 mb-4">
             Full interactive documentation at{' '}
-            <a href="http://localhost:3100/docs" target="_blank" className="text-blue-500 hover:underline">
+            <a href="https://api.agentspay.com/docs" target="_blank" className="text-blue-500 hover:underline">
               /docs (Swagger UI)
             </a>
           </p>
@@ -198,7 +198,7 @@ console.log(result.output)
           <p className="text-sm text-gray-400 mb-3">
             Endpoints marked 🔒 require authentication via httpOnly cookie (set automatically on wallet creation) or API key header:
           </p>
-          <CodeBlock code={`curl -H "x-api-key: YOUR_API_KEY" http://localhost:3100/api/wallets/YOUR_WALLET_ID`} lang="bash" />
+          <CodeBlock code={`curl -H "x-api-key: YOUR_API_KEY" https://api.agentspay.com/api/wallets/YOUR_WALLET_ID`} lang="bash" />
         </section>
 
         {/* x402 */}

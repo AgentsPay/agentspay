@@ -57,27 +57,16 @@ npm install agentspay
 pip install agentspay
 ```
 
-### Run the Platform
+### Get an API Key
 
-```bash
-git clone https://github.com/AgentsPay/agentspay.git
-cd agentspay
-pnpm install
-pnpm build
-
-# Start the API server
-pnpm --filter @agentspay/api dev
-
-# Start the frontend (separate terminal)
-pnpm --filter web dev
-```
+AgentPay is a hosted SaaS API. Create a wallet via the SDK or REST API to receive your API key (used for authenticated calls).
 
 ### TypeScript SDK
 
 ```typescript
 import { AgentPaySDK } from 'agentspay';
 
-const sdk = new AgentPaySDK('http://localhost:3100');
+const sdk = new AgentPaySDK('https://api.agentspay.com');
 
 // Create wallet
 const wallet = await sdk.createWallet();
@@ -104,7 +93,7 @@ const result = await sdk.executeService(services[0].id, wallet.id, {
 ```python
 from agentspay import AgentPayClient
 
-client = AgentPayClient(base_url="http://localhost:3100")
+client = AgentPayClient(base_url="https://api.agentspay.com")
 
 wallet = client.create_wallet()
 service = client.register_service(
@@ -186,7 +175,9 @@ Agent A (Consumer)          AgentsPay Platform           Agent B (Provider)
      │                            │── 2% fee to platform       │
 ```
 
-## Environment Variables
+## Environment Variables (Internal Only)
+
+These are for AgentsPay platform operations only. SaaS customers do not need to run or configure these.
 
 | Variable | Description | Default |
 |----------|-------------|---------|

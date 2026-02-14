@@ -4,7 +4,7 @@
  * Usage:
  * 
  * // As a service provider
- * const ap = new AgentPay({ apiUrl: 'http://localhost:3100' })
+ * const ap = new AgentPay({ apiUrl: 'https://api.agentspay.com' })
  * const wallet = await ap.createWallet()
  * await ap.registerService({
  *   agentId: wallet.id,
@@ -26,7 +26,7 @@ export class AgentPay {
   private apiUrl: string
 
   constructor(opts: { apiUrl?: string } = {}) {
-    this.apiUrl = opts.apiUrl || 'http://localhost:3100'
+    this.apiUrl = opts.apiUrl || 'https://api.agentspay.com'
   }
 
   async createWallet() {
