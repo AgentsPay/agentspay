@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid'
+import crypto from 'crypto'
 import { getDb } from '../registry/db'
 import type { AgentWallet } from '../types'
 import {
@@ -20,10 +21,41 @@ import type { UTXO } from '../bsv/crypto'
  * Manages real BSV wallets with on-chain balance tracking.
  */
 export class WalletManager {
+  private hashApiKey(apiKey: string): string {
+    return crypto.createHash('sha256').update(apiKey).digest('hex')
+  }
+
+  /**
+   * Generate a new API key for wallet auth.
+   * Returned ONLY on creation/rotation; stored hashed in DB.
+   */
+  generateApiKey(): string {
+    return crypto.randomBytes(32).toString('hex')
+  }
+
+  setApiKey(walletId: string, apiKey: string): void {
+    const db = getDb()
+    db.prepare('UPDATE wallets SET apiKeyHash = ? WHERE id = ?').run(this.hashApiKey(apiKey), walletId)
+  }
+
+  verifyApiKey(walletId: string, apiKey: string): boolean {
+    const db = getDb()
+    const row = db.prepare('SELECT apiKeyHash FROM wallets WHERE id = ?').get(walletId) as any
+    if (!row?.apiKeyHash) return false
+    return row.apiKeyHash === this.hashApiKey(apiKey)
+  }
+
+  getByApiKey(apiKey: string): AgentWallet | null {
+    const db = getDb()
+    const hash = this.hashApiKey(apiKey)
+    const row = db.prepare('SELECT id, publicKey, address, createdAt FROM wallets WHERE apiKeyHash = ?').get(hash) as any
+    return row || null
+  }
+
   /**
    * Create a new agent wallet with real BSV keys
    */
-  create(): AgentWallet & { privateKey: string } {
+  create(): AgentWallet & { privateKey: string; apiKey: string } {
     const db = getDb()
     const id = uuid()
 
@@ -34,17 +66,22 @@ export class WalletManager {
 
     const encryptedPrivKey = encryptPrivateKey(privateKeyWif)
 
+    const apiKey = this.generateApiKey()
+    const apiKeyHash = this.hashApiKey(apiKey)
+
+    const createdAt = new Date().toISOString()
     db.prepare(`
-      INSERT INTO wallets (id, publicKey, address, privateKey, createdAt)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, publicKey, address, encryptedPrivKey, new Date().toISOString())
+      INSERT INTO wallets (id, publicKey, address, privateKey, apiKeyHash, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, publicKey, address, encryptedPrivKey, apiKeyHash, createdAt)
 
     return {
       id,
       publicKey,
       address,
-      createdAt: new Date().toISOString(),
+      createdAt,
       privateKey: privateKeyWif, // Only returned on creation.
+      apiKey, // Only returned on creation.
     }
   }
 
@@ -64,8 +101,17 @@ export class WalletManager {
     if (existing) return existing
 
     const createdAt = new Date().toISOString()
-    db.prepare('INSERT INTO wallets (id, publicKey, address, privateKey, createdAt) VALUES (?, ?, ?, ?, ?)')
-      .run(id, publicKey, address, encryptedPrivKey, createdAt)
+    db.prepare('INSERT INTO wallets (id, publicKey, address, privateKey, createdAt) VALUES (?, ?, ?, ?, ?)').run(
+      id,
+      publicKey,
+      address,
+      encryptedPrivKey,
+      createdAt
+    )
+
+    // Create an API key for the imported wallet (not returned here).
+    const apiKey = this.generateApiKey()
+    this.setApiKey(id, apiKey)
 
     return { id, publicKey, address, createdAt }
   }
@@ -176,15 +222,23 @@ export class WalletManager {
       /* table may not exist yet */
     }
 
-    const received = db.prepare(`
+    const received = db
+      .prepare(
+        `
       SELECT COALESCE(SUM(amount - platformFee), 0) as total
       FROM payments WHERE sellerWalletId = ? AND status = 'released'
-    `).get(walletId) as any
+    `
+      )
+      .get(walletId) as any
 
-    const sent = db.prepare(`
+    const sent = db
+      .prepare(
+        `
       SELECT COALESCE(SUM(amount), 0) as total
       FROM payments WHERE buyerWalletId = ? AND status IN ('released', 'escrowed')
-    `).get(walletId) as any
+    `
+      )
+      .get(walletId) as any
 
     return deposits + (received?.total || 0) - (sent?.total || 0)
   }

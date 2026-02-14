@@ -33,6 +33,10 @@ export class PaymentEngine {
     const platformFee = Math.ceil(amount * PLATFORM_FEE_RATE)
     const now = new Date().toISOString()
 
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Invalid amount')
+    }
+
     if (config.demoMode) {
       // Demo mode: internal ledger, no on-chain tx
       db.prepare(`
