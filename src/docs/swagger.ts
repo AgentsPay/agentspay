@@ -33,6 +33,18 @@ function loadOpenApiSpec(): any {
 export function setupSwagger(app: Express): void {
   const swaggerSpec = loadOpenApiSpec()
 
+  // Serve raw spec at /docs/openapi.json and /docs/openapi.yaml
+  // MUST be registered BEFORE Swagger UI middleware
+  app.get('/docs/openapi.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/json')
+    res.send(JSON.stringify(swaggerSpec, null, 2))
+  })
+
+  app.get('/docs/openapi.yaml', (_req, res) => {
+    res.setHeader('Content-Type', 'text/yaml')
+    res.sendFile(OPENAPI_SPEC_PATH)
+  })
+
   // Swagger UI options
   const swaggerUiOptions: swaggerUi.SwaggerUiOptions = {
     customCss: `
@@ -60,17 +72,6 @@ export function setupSwagger(app: Express): void {
     swaggerUi.serve,
     swaggerUi.setup(swaggerSpec, swaggerUiOptions)
   )
-
-  // Also serve raw spec at /docs/openapi.json and /docs/openapi.yaml
-  app.get('/docs/openapi.json', (_req, res) => {
-    res.setHeader('Content-Type', 'application/json')
-    res.send(JSON.stringify(swaggerSpec, null, 2))
-  })
-
-  app.get('/docs/openapi.yaml', (_req, res) => {
-    res.setHeader('Content-Type', 'text/yaml')
-    res.sendFile(OPENAPI_SPEC_PATH)
-  })
 
   console.log('📚 Swagger UI available at /docs')
   console.log('📄 OpenAPI spec: /docs/openapi.json | /docs/openapi.yaml')
