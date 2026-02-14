@@ -10,8 +10,11 @@ import { Express } from 'express'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as yaml from 'js-yaml'
+import { fileURLToPath } from 'url'
 
-const OPENAPI_SPEC_PATH = path.join(__dirname, 'openapi.yaml')
+const __filename_esm = fileURLToPath(import.meta.url)
+const __dirname_esm = path.dirname(__filename_esm)
+const OPENAPI_SPEC_PATH = path.join(__dirname_esm, 'openapi.yaml')
 
 /**
  * Load OpenAPI spec from YAML file

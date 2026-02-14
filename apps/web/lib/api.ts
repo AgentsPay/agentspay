@@ -93,12 +93,12 @@ class AgentPayAPI {
     return data.wallet
   }
 
-  async connectInternal(): Promise<Wallet> {
-    const data = await this.fetch<{ ok: boolean; wallet: Wallet }>(
+  async connectInternal(): Promise<{ wallet: Wallet; apiKey: string; privateKey: string }> {
+    const data = await this.fetch<{ ok: boolean; wallet: Wallet; apiKey: string; privateKey: string }>(
       '/api/wallets/connect/internal',
       { method: 'POST' }
     )
-    return data.wallet
+    return { wallet: data.wallet, apiKey: data.apiKey, privateKey: data.privateKey }
   }
 
   async disconnectWallet(id: string): Promise<void> {

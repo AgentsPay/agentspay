@@ -17,6 +17,8 @@ export default function WalletPage() {
   const [utxos, setUtxos] = useState<UTXO[]>([])
   const [showPrivateKey, setShowPrivateKey] = useState(false)
   const [newWallet, setNewWallet] = useState<Wallet | null>(null)
+  const [newApiKey, setNewApiKey] = useState<string | null>(null)
+  const [newPrivateKey, setNewPrivateKey] = useState<string | null>(null)
   const [fundAmount, setFundAmount] = useState('10000')
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState<'transactions' | 'utxos'>('transactions')
@@ -95,11 +97,13 @@ export default function WalletPage() {
   async function handleConnectInternal() {
     try {
       setLoading(true)
-      const w = await api.connectInternal()
+      const { wallet: w, apiKey, privateKey } = await api.connectInternal()
       const updated = [...wallets, w.id]
       setWallets(updated)
       localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
       setNewWallet(w)
+      setNewApiKey(apiKey)
+      setNewPrivateKey(privateKey)
       setSelectedWalletId(w.id)
       success('Internal wallet created successfully!')
     } catch (err: any) {
@@ -204,28 +208,37 @@ export default function WalletPage() {
         </div>
 
         {/* New Wallet Alert (one-time) */}
-        {newWallet && newWallet.privateKey && (
+        {newWallet && (newPrivateKey || newApiKey) && (
           <div className="card mb-6 bg-yellow-500/5 border-yellow-500/20">
             <div className="flex items-start gap-3 mb-4">
               <span className="text-2xl">⚠️</span>
               <div>
-                <h3 className="font-semibold text-yellow-500 mb-1">Save Your Private Key!</h3>
+                <h3 className="font-semibold text-yellow-500 mb-1">Save Your Credentials!</h3>
                 <p className="text-sm text-gray-400">
-                  This is the ONLY time you'll see it. Store it securely — we don't save it.
+                  This is the ONLY time you'll see them. Store them securely — we don't save them.
                 </p>
               </div>
             </div>
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-3">
-              <div className="text-xs text-gray-500 mb-1">Private Key</div>
-              <div className="font-mono text-sm break-all">{newWallet.privateKey}</div>
-            </div>
-            <div className="flex gap-2">
-              <CopyButton text={newWallet.privateKey} label="Copy Private Key" />
+            {newApiKey && (
+              <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-3">
+                <div className="text-xs text-gray-500 mb-1">API Key</div>
+                <div className="font-mono text-sm break-all">{newApiKey}</div>
+                <CopyButton text={newApiKey} label="Copy API Key" />
+              </div>
+            )}
+            {newPrivateKey && (
+              <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-3">
+                <div className="text-xs text-gray-500 mb-1">Private Key (WIF)</div>
+                <div className="font-mono text-sm break-all">{newPrivateKey}</div>
+                <CopyButton text={newPrivateKey} label="Copy Private Key" />
+              </div>
+            )}
+            <div className="flex gap-2 mt-3">
               <button
-                onClick={() => setNewWallet(null)}
+                onClick={() => { setNewWallet(null); setNewApiKey(null); setNewPrivateKey(null); }}
                 className="btn btn-secondary text-sm"
               >
-                I've saved it — Close
+                I've saved them — Close
               </button>
             </div>
           </div>
