@@ -3,8 +3,14 @@ import { resolve } from 'path'
 // Load .env from monorepo root
 dotenvConfig({ path: resolve(process.cwd(), '.env') })
 
-process.on('uncaughtException', (err) => { console.error('UNCAUGHT:', err); })
-process.on('unhandledRejection', (err) => { console.error('UNHANDLED:', err); })
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT:', err)
+  process.exit(1)
+})
+process.on('unhandledRejection', (err) => {
+  console.error('UNHANDLED:', err)
+  process.exit(1)
+})
 
 import express from 'express'
 import cors from 'cors'
