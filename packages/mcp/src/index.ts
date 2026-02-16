@@ -12,7 +12,7 @@
  * 
  * Usage:
  *   npx @agentspay/mcp
- *   AGENTSPAY_API_URL=http://localhost:4000 npx @agentspay/mcp
+ *   AGENTPAY_API_URL=http://localhost:3100 npx @agentspay/mcp
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -23,8 +23,9 @@ import {
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 
-const API_URL = process.env.AGENTSPAY_API_URL || 'http://localhost:4000';
-const API_KEY = process.env.AGENTSPAY_API_KEY || '';
+// AGENTSPAY_* is kept only as legacy fallback.
+const API_URL = process.env.AGENTPAY_API_URL || process.env.AGENTSPAY_API_URL || 'http://localhost:3100';
+const API_KEY = process.env.AGENTPAY_API_KEY || process.env.AGENTSPAY_API_KEY || '';
 
 // ─── HTTP Client ───
 
@@ -127,7 +128,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'register_service',
-    description: 'Register your AI agent as a service provider on the AgentPay marketplace. Other agents can then discover and pay for your service.',
+    description: 'Register your AI agent as a service provider on the AgentPay marketplace. No endpoint needed — providers poll for jobs via the job queue.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -151,22 +152,18 @@ const TOOLS: Tool[] = [
           type: 'number',
           description: 'Price per execution in satoshis',
         },
-        endpoint: {
-          type: 'string',
-          description: 'HTTP endpoint URL where your service runs',
-        },
         currency: {
           type: 'string',
           enum: ['BSV', 'MNEE'],
           default: 'BSV',
         },
       },
-      required: ['agentId', 'name', 'description', 'category', 'price', 'endpoint'],
+      required: ['agentId', 'name', 'description', 'category', 'price'],
     },
   },
   {
     name: 'execute_service',
-    description: 'Execute a service on the marketplace. This atomically: (1) pays the service provider, (2) runs the service, (3) settles the transaction. Returns the service output and payment receipt.',
+    description: 'Submit a job to a service on the marketplace. This escrows payment and creates a pending job. The provider polls for jobs, accepts, and submits results. Returns a jobId to poll for results.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -184,6 +181,89 @@ const TOOLS: Tool[] = [
         },
       },
       required: ['serviceId', 'buyerWalletId'],
+    },
+  },
+  {
+    name: 'get_job',
+    description: 'Get the status and result of a job. Poll this after execute_service to check if the provider has completed the work.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        jobId: {
+          type: 'string',
+          description: 'The job ID returned from execute_service',
+        },
+      },
+      required: ['jobId'],
+    },
+  },
+  {
+    name: 'list_jobs',
+    description: 'List your jobs as a buyer or provider. Providers use this to discover pending jobs to accept.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        role: {
+          type: 'string',
+          enum: ['buyer', 'provider'],
+          description: 'Filter by role (buyer or provider)',
+        },
+        status: {
+          type: 'string',
+          enum: ['pending', 'in_progress', 'completed', 'failed', 'expired'],
+          description: 'Filter by job status',
+        },
+      },
+    },
+  },
+  {
+    name: 'accept_job',
+    description: 'Accept a pending job as a provider. Changes job status to in_progress.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        jobId: {
+          type: 'string',
+          description: 'The job ID to accept',
+        },
+      },
+      required: ['jobId'],
+    },
+  },
+  {
+    name: 'submit_job_result',
+    description: 'Submit the result of a job as a provider. Payment is released to you automatically.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        jobId: {
+          type: 'string',
+          description: 'The job ID to submit result for',
+        },
+        output: {
+          type: 'object',
+          description: 'The output/result data',
+        },
+      },
+      required: ['jobId', 'output'],
+    },
+  },
+  {
+    name: 'fail_job',
+    description: 'Report that a job failed as a provider. Payment is refunded to the buyer.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        jobId: {
+          type: 'string',
+          description: 'The job ID that failed',
+        },
+        error: {
+          type: 'string',
+          description: 'Error message explaining the failure',
+        },
+      },
+      required: ['jobId', 'error'],
     },
   },
   {
@@ -332,24 +412,24 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
     }
 
     case 'register_service': {
+      const body: Record<string, any> = {
+        agentId: args.agentId,
+        name: args.name,
+        description: args.description,
+        category: args.category,
+        price: args.price,
+        currency: args.currency || 'BSV',
+      };
       const result = await apiRequest('/api/services', {
         method: 'POST',
-        body: JSON.stringify({
-          agentId: args.agentId,
-          name: args.name,
-          description: args.description,
-          category: args.category,
-          price: args.price,
-          endpoint: args.endpoint,
-          currency: args.currency || 'BSV',
-          method: 'POST',
-        }),
+        body: JSON.stringify(body),
       });
       return JSON.stringify({
         registered: true,
         serviceId: result.service?.id || result.id,
         name: args.name,
         price: args.price,
+        message: 'Service registered. Buyers submit jobs through the queue. Poll GET /api/jobs?role=provider&status=pending to receive work.',
       }, null, 2);
     }
 
@@ -362,11 +442,79 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         }),
       });
       return JSON.stringify({
-        success: true,
-        output: result.output,
+        submitted: true,
+        jobId: result.jobId,
         paymentId: result.paymentId,
-        txId: result.txid || result.txId,
-        receipt: result.receipt ? { id: result.receipt.id, hash: result.receipt.receiptHash } : null,
+        status: result.status || 'pending',
+        expiresAt: result.expiresAt,
+        message: 'Job submitted. Poll get_job with the jobId to check for results.',
+      }, null, 2);
+    }
+
+    case 'get_job': {
+      const result = await apiRequest(`/api/jobs/${args.jobId}`);
+      const job = result.job || result;
+      return JSON.stringify({
+        id: job.id,
+        status: job.status,
+        output: job.output,
+        error: job.error,
+        createdAt: job.createdAt,
+        acceptedAt: job.acceptedAt,
+        completedAt: job.completedAt,
+        expiresAt: job.expiresAt,
+      }, null, 2);
+    }
+
+    case 'list_jobs': {
+      const params = new URLSearchParams();
+      if (args.role) params.set('role', args.role);
+      if (args.status) params.set('status', args.status);
+      const result = await apiRequest(`/api/jobs?${params}`);
+      const jobs = (result.jobs || []).map((j: any) => ({
+        id: j.id,
+        serviceId: j.serviceId,
+        status: j.status,
+        createdAt: j.createdAt,
+        expiresAt: j.expiresAt,
+      }));
+      return JSON.stringify({ jobs, count: jobs.length }, null, 2);
+    }
+
+    case 'accept_job': {
+      const result = await apiRequest(`/api/jobs/${args.jobId}/accept`, { method: 'POST' });
+      return JSON.stringify({
+        accepted: true,
+        jobId: args.jobId,
+        status: result.job?.status || 'in_progress',
+        input: result.job?.input,
+        message: 'Job accepted. Process the input and submit result with submit_job_result.',
+      }, null, 2);
+    }
+
+    case 'submit_job_result': {
+      const result = await apiRequest(`/api/jobs/${args.jobId}/result`, {
+        method: 'POST',
+        body: JSON.stringify({ output: args.output }),
+      });
+      return JSON.stringify({
+        completed: true,
+        jobId: args.jobId,
+        status: result.job?.status || 'completed',
+        message: 'Job completed. Payment has been released to your wallet.',
+      }, null, 2);
+    }
+
+    case 'fail_job': {
+      const result = await apiRequest(`/api/jobs/${args.jobId}/fail`, {
+        method: 'POST',
+        body: JSON.stringify({ error: args.error }),
+      });
+      return JSON.stringify({
+        failed: true,
+        jobId: args.jobId,
+        status: result.job?.status || 'failed',
+        message: 'Job marked as failed. Payment has been refunded to the buyer.',
       }, null, 2);
     }
 

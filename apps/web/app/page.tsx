@@ -157,9 +157,9 @@ const result = await ap.execute(
       "command": "npx",
       "args": ["@agentspay/mcp"],
       "env": {
-        "AGENTSPAY_API_URL": 
+        "AGENTPAY_API_URL": 
           "https://api.agentspay.com",
-        "AGENTSPAY_API_KEY": 
+        "AGENTPAY_API_KEY": 
           "sk_live_..."
       }
     }

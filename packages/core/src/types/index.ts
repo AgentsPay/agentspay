@@ -19,8 +19,8 @@ export interface Service {
   category: string
   price: number          // amount per call (satoshis for BSV, cents for MNEE)
   currency: Currency     // 'BSV' or 'MNEE'
-  endpoint: string       // URL donde el agente provider escucha
-  method: 'POST' | 'GET'
+  endpoint?: string      // optional — not needed for job-queue model
+  method?: string        // optional — not needed for job-queue model
   inputSchema?: object   // JSON schema del input esperado
   outputSchema?: object  // JSON schema del output
   active: boolean
@@ -33,6 +33,7 @@ export interface Service {
 export interface Payment {
   id: string
   serviceId: string
+  contractId?: string
   buyerWalletId: string
   sellerWalletId: string
   amount: number         // amount (satoshis for BSV, cents for MNEE)
@@ -41,6 +42,10 @@ export interface Payment {
   status: 'pending' | 'escrowed' | 'released' | 'disputed' | 'refunded'
   disputeStatus?: string // 'disputed' | 'no_dispute' | resolution status
   txId?: string          // Transaction id (BSV txid or MNEE token transfer id)
+  escrowTxId?: string
+  escrowVout?: number
+  escrowScript?: string
+  escrowMode?: 'platform' | 'multisig'
   createdAt: string
   completedAt?: string
 }
@@ -54,9 +59,28 @@ export interface ExecutionRequest {
 export interface ExecutionResult {
   paymentId: string
   serviceId: string
+  jobId?: string
   output: Record<string, unknown>
   executionTimeMs: number
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'pending'
+}
+
+export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'expired'
+
+export interface Job {
+  id: string
+  serviceId: string
+  paymentId: string
+  buyerWalletId: string
+  providerWalletId: string
+  status: JobStatus
+  input?: any
+  output?: any
+  error?: string
+  createdAt: string
+  acceptedAt?: string
+  completedAt?: string
+  expiresAt: string
 }
 
 export interface ReputationScore {

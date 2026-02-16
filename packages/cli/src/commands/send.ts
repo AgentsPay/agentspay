@@ -43,8 +43,8 @@ export async function sendCommand(
   console.log(chalk.dim(`  Price: ${service.price?.toLocaleString() || '?'} sats | By: ${service.agentId || 'unknown'}`));
   console.log('');
 
-  // Execute
-  const execSpinner = ora('Executing service (pay → run → settle)...').start();
+  // Execute (creates escrowed payment + pending job)
+  const execSpinner = ora('Submitting job...').start();
 
   try {
     const result = await apiRequest(`/api/execute/${serviceId}`, {
@@ -52,24 +52,67 @@ export async function sendCommand(
       body: JSON.stringify({ buyerWalletId, input }),
     });
 
-    execSpinner.succeed('Execution complete!');
+    const jobId = result.jobId;
+    if (!jobId) {
+      // Legacy sync response
+      execSpinner.succeed('Execution complete!');
+      console.log('');
+      console.log(chalk.bold('  Result'));
+      console.log(chalk.dim('  ─────────────────────────────'));
+      if (result.output) console.log(`  ${chalk.cyan('Output:')}   ${JSON.stringify(result.output)}`);
+      if (result.paymentId) console.log(`  ${chalk.cyan('Payment:')}  ${result.paymentId}`);
+      console.log('');
+      return;
+    }
 
+    execSpinner.succeed(`Job created: ${jobId}`);
+    console.log(`  ${chalk.cyan('Payment:')}  ${result.paymentId}`);
     console.log('');
-    console.log(chalk.bold('  Result'));
-    console.log(chalk.dim('  ─────────────────────────────'));
 
-    if (result.output) {
-      console.log(`  ${chalk.cyan('Output:')}   ${JSON.stringify(result.output)}`);
+    // Poll for job completion
+    const pollSpinner = ora('Waiting for provider...').start();
+    const pollInterval = 2000;
+    const maxPollTime = (service.timeout || 30) * 1000 + 10000; // timeout + grace
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxPollTime) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      try {
+        const jobResult = await apiRequest(`/api/jobs/${jobId}`);
+        const job = jobResult.job || jobResult;
+
+        if (job.status === 'in_progress') {
+          pollSpinner.text = 'Provider working...';
+        } else if (job.status === 'completed') {
+          pollSpinner.succeed('Job completed!');
+          console.log('');
+          console.log(chalk.bold('  Result'));
+          console.log(chalk.dim('  ─────────────────────────────'));
+          if (job.output) console.log(`  ${chalk.cyan('Output:')}   ${JSON.stringify(job.output)}`);
+          console.log(`  ${chalk.cyan('Payment:')}  ${job.paymentId}`);
+          console.log(`  ${chalk.cyan('Status:')}   ${chalk.green('completed — payment released')}`);
+          console.log('');
+          return;
+        } else if (job.status === 'failed') {
+          pollSpinner.fail('Job failed');
+          console.log(`  ${chalk.red('Error:')}    ${job.error || 'Unknown error'}`);
+          console.log(`  ${chalk.cyan('Status:')}   ${chalk.yellow('payment refunded')}`);
+          console.log('');
+          process.exit(1);
+        } else if (job.status === 'expired') {
+          pollSpinner.fail('Job expired — provider did not respond in time');
+          console.log(`  ${chalk.cyan('Status:')}   ${chalk.yellow('payment refunded')}`);
+          console.log('');
+          process.exit(1);
+        }
+      } catch {
+        // Poll error — retry
+      }
     }
-    if (result.paymentId) {
-      console.log(`  ${chalk.cyan('Payment:')}  ${result.paymentId}`);
-    }
-    if (result.txid) {
-      console.log(`  ${chalk.cyan('TX ID:')}    ${result.txid}`);
-    }
-    if (result.receipt) {
-      console.log(`  ${chalk.cyan('Receipt:')}  ${result.receipt.id || 'generated'}`);
-    }
+
+    pollSpinner.fail('Timed out waiting for provider');
+    console.log(chalk.dim(`  Job ${jobId} may still be processing. Check status with the API.`));
     console.log('');
   } catch (err: any) {
     execSpinner.fail(`Execution failed: ${err.message}`);

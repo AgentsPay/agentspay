@@ -48,6 +48,7 @@ function initSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS payments (
       id TEXT PRIMARY KEY,
       serviceId TEXT NOT NULL REFERENCES services(id),
+      contractId TEXT REFERENCES service_contracts(id),
       buyerWalletId TEXT NOT NULL REFERENCES wallets(id),
       sellerWalletId TEXT NOT NULL REFERENCES wallets(id),
       amount INTEGER NOT NULL,
@@ -57,9 +58,33 @@ function initSchema(db: Database.Database) {
       disputeStatus TEXT,
       txId TEXT,
       escrowTxId TEXT,
+      escrowVout INTEGER,
+      escrowScript TEXT,
+      escrowMode TEXT NOT NULL DEFAULT 'platform',
       releaseTxId TEXT,
       createdAt TEXT NOT NULL DEFAULT (datetime('now')),
       completedAt TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS service_contracts (
+      id TEXT PRIMARY KEY,
+      serviceId TEXT NOT NULL REFERENCES services(id),
+      buyerWalletId TEXT NOT NULL REFERENCES wallets(id),
+      providerWalletId TEXT NOT NULL REFERENCES wallets(id),
+      buyerAddress TEXT NOT NULL,
+      providerAddress TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'BSV',
+      termsHash TEXT NOT NULL,
+      disputeWindow INTEGER NOT NULL,
+      contractHash TEXT NOT NULL UNIQUE,
+      buyerSignature TEXT NOT NULL,
+      providerSignature TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      contractTxId TEXT,
+      settlementTxId TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      settledAt TEXT
     );
 
     CREATE TABLE IF NOT EXISTS disputes (
@@ -104,7 +129,8 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
     CREATE INDEX IF NOT EXISTS idx_payments_buyer ON payments(buyerWalletId);
     CREATE INDEX IF NOT EXISTS idx_payments_seller ON payments(sellerWalletId);
-    CREATE INDEX IF NOT EXISTS idx_payments_dispute_status ON payments(disputeStatus);
+    -- NOTE: indexes on migrated columns (contractId/disputeStatus) are created
+    -- after ALTER TABLE statements below for compatibility with older databases.
     CREATE INDEX IF NOT EXISTS idx_disputes_payment ON disputes(paymentId);
     CREATE INDEX IF NOT EXISTS idx_disputes_buyer ON disputes(buyerWalletId);
     CREATE INDEX IF NOT EXISTS idx_disputes_provider ON disputes(providerWalletId);
@@ -112,6 +138,10 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_utxos_wallet ON utxos(walletId);
     CREATE INDEX IF NOT EXISTS idx_utxos_spent ON utxos(spent);
     CREATE INDEX IF NOT EXISTS idx_utxos_txid_vout ON utxos(txid, vout);
+    CREATE INDEX IF NOT EXISTS idx_contracts_service ON service_contracts(serviceId);
+    CREATE INDEX IF NOT EXISTS idx_contracts_buyer ON service_contracts(buyerWalletId);
+    CREATE INDEX IF NOT EXISTS idx_contracts_provider ON service_contracts(providerWalletId);
+    CREATE INDEX IF NOT EXISTS idx_contracts_status ON service_contracts(status);
 
     CREATE TABLE IF NOT EXISTS webhooks (
       id TEXT PRIMARY KEY,
@@ -179,6 +209,30 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_mnee_ledger_txid ON mnee_ledger(txid);
   `)
 
+  // Jobs table for async job-queue execution model
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      serviceId TEXT NOT NULL REFERENCES services(id),
+      paymentId TEXT NOT NULL UNIQUE REFERENCES payments(id),
+      buyerWalletId TEXT NOT NULL REFERENCES wallets(id),
+      providerWalletId TEXT NOT NULL REFERENCES wallets(id),
+      status TEXT NOT NULL DEFAULT 'pending',
+      input TEXT,
+      output TEXT,
+      error TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      acceptedAt TEXT,
+      completedAt TEXT,
+      expiresAt TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_jobs_provider_status ON jobs(providerWalletId, status);
+    CREATE INDEX IF NOT EXISTS idx_jobs_service ON jobs(serviceId);
+    CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_jobs_expires ON jobs(expiresAt);
+  `)
+
   // Migration: Add missing columns to existing tables
   // SQLite doesn't support IF NOT EXISTS on ALTER TABLE, so we use try/catch
   try { db.exec("ALTER TABLE payments ADD COLUMN disputeStatus TEXT DEFAULT 'none'") } catch(e) { /* column already exists */ }
@@ -186,6 +240,14 @@ function initSchema(db: Database.Database) {
   try { db.exec("ALTER TABLE services ADD COLUMN currency TEXT DEFAULT 'BSV'") } catch(e) { /* column already exists */ }
   try { db.exec("ALTER TABLE services ADD COLUMN timeout INTEGER DEFAULT 30") } catch(e) { /* column already exists */ }
   try { db.exec("ALTER TABLE services ADD COLUMN disputeWindow INTEGER DEFAULT 30") } catch(e) { /* column already exists */ }
+  try { db.exec("ALTER TABLE payments ADD COLUMN x402ConsumedAt TEXT") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE payments ADD COLUMN x402JobId TEXT REFERENCES jobs(id)") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE payments ADD COLUMN contractId TEXT REFERENCES service_contracts(id)") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE payments ADD COLUMN escrowVout INTEGER") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE payments ADD COLUMN escrowScript TEXT") } catch(e) { /* exists */ }
+  try { db.exec("ALTER TABLE payments ADD COLUMN escrowMode TEXT DEFAULT 'platform'") } catch(e) { /* exists */ }
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_payments_contract ON payments(contractId)") } catch(e) { /* column missing/corrupt db */ }
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_payments_dispute_status ON payments(disputeStatus)") } catch(e) { /* column missing/corrupt db */ }
 
   // Spending limits migration
   try { db.exec("ALTER TABLE wallets ADD COLUMN txLimit INTEGER DEFAULT NULL") } catch(e) { /* exists */ }
@@ -238,5 +300,68 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_identities_address ON agent_identities(address);
     CREATE INDEX IF NOT EXISTS idx_identities_type ON agent_identities(type);
     CREATE INDEX IF NOT EXISTS idx_attestations_to ON identity_attestations(toAddress);
+  `)
+
+  // Admin audit log
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      status TEXT NOT NULL,
+      adminKeyVersion TEXT,
+      disputeId TEXT,
+      ip TEXT,
+      userAgent TEXT,
+      details TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_logs(createdAt);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_action ON admin_audit_logs(action);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_dispute ON admin_audit_logs(disputeId);
+  `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_auth_challenges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nonce TEXT NOT NULL UNIQUE,
+      challenge TEXT NOT NULL,
+      requestedAddress TEXT,
+      expiresAt TEXT NOT NULL,
+      usedAt TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_challenges_nonce ON admin_auth_challenges(nonce);
+    CREATE INDEX IF NOT EXISTS idx_admin_challenges_expires ON admin_auth_challenges(expiresAt);
+
+    CREATE TABLE IF NOT EXISTS admin_auth_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tokenHash TEXT NOT NULL UNIQUE,
+      walletAddress TEXT NOT NULL,
+      challengeNonce TEXT NOT NULL,
+      expiresAt TEXT NOT NULL,
+      revokedAt TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_auth_sessions(tokenHash);
+    CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_auth_sessions(expiresAt);
+    CREATE INDEX IF NOT EXISTS idx_admin_sessions_wallet ON admin_auth_sessions(walletAddress);
+
+    CREATE TABLE IF NOT EXISTS settlement_approvals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      paymentId TEXT NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+      action TEXT NOT NULL,
+      actorType TEXT NOT NULL,
+      actorId TEXT NOT NULL,
+      signature TEXT NOT NULL,
+      message TEXT NOT NULL,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(paymentId, action, actorType, actorId)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_settlement_approvals_payment ON settlement_approvals(paymentId);
+    CREATE INDEX IF NOT EXISTS idx_settlement_approvals_action ON settlement_approvals(action);
   `)
 }

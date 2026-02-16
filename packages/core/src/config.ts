@@ -42,8 +42,8 @@ export const config = {
   // Platform fee rate (2%)
   platformFeeRate: 0.02,
 
-  // Escrow mode: 'platform' (centralized) | 'multisig' (future)
-  escrowMode: 'platform' as 'platform' | 'multisig',
+  // Escrow mode: 'platform' (centralized) | 'multisig' (2-of-3 on-chain BSV script)
+  escrowMode: (process.env.AGENTPAY_ESCROW_MODE === 'multisig' ? 'multisig' : 'platform') as 'platform' | 'multisig',
 
   // Demo mode: use internal ledger instead of on-chain transactions
   // Set AGENTPAY_DEMO=true for local testing without real BSV

@@ -1,5 +1,6 @@
 import { WebhookManager, type WebhookEvent } from './webhook'
 import { config } from '../config'
+import { assertResolvesToPublicIp } from '../utils/validation'
 
 /**
  * Webhook Delivery Service
@@ -81,6 +82,9 @@ export class WebhookDelivery {
     const now = new Date().toISOString()
 
     try {
+      const parsed = new URL(url)
+      await assertResolvesToPublicIp(parsed.hostname)
+
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), this.deliveryTimeoutMs)
 

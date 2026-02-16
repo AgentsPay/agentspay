@@ -8,7 +8,13 @@
     "dev": "turbo dev",
     "lint": "turbo lint",
     "clean": "turbo clean",
-    "demo": "pnpm --filter @agentspay/api demo"
+    "demo": "pnpm --filter @agentspay/api demo",
+    "test:e2e:api": "pnpm --filter @agentspay/api build && powershell -NoProfile -ExecutionPolicy Bypass -File tests/e2e-api.ps1",
+    "test:e2e": "pnpm run test:e2e:api",
+    "test:security:api": "pnpm --filter @agentspay/api build && powershell -NoProfile -ExecutionPolicy Bypass -File tests/security-api.ps1",
+    "test:security": "pnpm run test:security:api",
+    "test:pentest:api": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/pentest-api.ps1",
+    "test:pentest": "pnpm run test:pentest:api"
   },
   "devDependencies": {
     "turbo": "^2.0.0"

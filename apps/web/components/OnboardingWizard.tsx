@@ -3,9 +3,7 @@
 import { useState } from 'react'
 import { CopyButton } from './CopyButton'
 
-type UserType = 'human' | 'agent'
-type WalletChoice = 'yours' | 'handcash' | 'create' | 'import' | null
-type Step = 'who' | 'wallet' | 'agent-setup' | 'credentials' | 'done'
+type Step = 'setup' | 'credentials' | 'done'
 
 interface OnboardingWizardProps {
   open: boolean
@@ -16,22 +14,18 @@ interface OnboardingWizardProps {
 }
 
 export function OnboardingWizard({ open, onClose, onConnect, loading, credentials }: OnboardingWizardProps) {
-  const [step, setStep] = useState<Step>('who')
-  const [userType, setUserType] = useState<UserType | null>(null)
-  const [walletChoice, setWalletChoice] = useState<WalletChoice>(null)
+  const [step, setStep] = useState<Step>('setup')
   const [importKey, setImportKey] = useState('')
   const [agentName, setAgentName] = useState('')
-  const [savedCreds, setSavedCreds] = useState(false)
+  const [showImport, setShowImport] = useState(false)
 
   if (!open) return null
 
   const reset = () => {
-    setStep('who')
-    setUserType(null)
-    setWalletChoice(null)
+    setStep('setup')
     setImportKey('')
     setAgentName('')
-    setSavedCreds(false)
+    setShowImport(false)
   }
 
   const handleClose = () => {
@@ -39,36 +33,20 @@ export function OnboardingWizard({ open, onClose, onConnect, loading, credential
     onClose()
   }
 
-  // Step indicators
-  const steps: { id: Step; label: string }[] = userType === 'agent'
-    ? [{ id: 'who', label: 'Role' }, { id: 'wallet', label: 'Wallet' }, { id: 'agent-setup', label: 'Agent' }, { id: 'credentials', label: 'Keys' }, { id: 'done', label: 'Done' }]
-    : [{ id: 'who', label: 'Role' }, { id: 'wallet', label: 'Wallet' }, { id: 'credentials', label: 'Keys' }, { id: 'done', label: 'Done' }]
+  const steps: { id: Step; label: string }[] = [
+    { id: 'setup', label: 'Setup' },
+    { id: 'credentials', label: 'Keys' },
+    { id: 'done', label: 'Done' },
+  ]
 
   const currentIdx = steps.findIndex(s => s.id === step)
 
-  const handleWalletConnect = async (choice: WalletChoice) => {
-    setWalletChoice(choice)
+  const handleProvision = async () => {
     try {
-      if (choice === 'create') {
-        if (userType === 'agent') {
-          // Agent flow: go to agent-setup first to get name, then provision
-          setStep('agent-setup')
-          return
-        }
-        await onConnect('internal')
-        setStep('credentials')
-      } else if (choice === 'yours') {
-        await onConnect('yours')
-        setStep(userType === 'agent' ? 'agent-setup' : 'done')
-      } else if (choice === 'handcash') {
-        await onConnect('handcash')
-        // HandCash redirects, so we won't reach here
-      } else if (choice === 'import') {
-        // Show import input (handled in render)
-      }
+      await onConnect('provision', { agentName: agentName || 'My Agent' })
+      setStep('credentials')
     } catch {
-      // Error handled by parent toast — reset wallet choice so user can retry
-      setWalletChoice(null)
+      // Error handled by parent toast
     }
   }
 
@@ -76,7 +54,13 @@ export function OnboardingWizard({ open, onClose, onConnect, loading, credential
     if (!importKey.trim()) return
     try {
       await onConnect('import', { privateKey: importKey.trim() })
-      setStep(userType === 'agent' ? 'agent-setup' : 'done')
+      // Auto-register identity for the imported wallet
+      try {
+        await onConnect('register-identity', { agentName: agentName || 'My Agent' })
+      } catch {
+        // Identity registration is optional — wallet still works
+      }
+      setStep('credentials')
     } catch {
       // Error handled by parent toast
     }
@@ -92,8 +76,7 @@ AGENTPAY_API_URL=http://localhost:3100
 AGENTPAY_WALLET_ID=${credentials.walletId || ''}
 AGENTPAY_API_KEY=${credentials.apiKey || ''}
 AGENTPAY_ADDRESS=${credentials.address || ''}
-${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '# Private key: connect via Yours Wallet'}
-`
+${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '# Private key: not available (imported wallet)'}`
   }
 
   return (
@@ -104,13 +87,11 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-2">
           <h2 className="text-xl font-bold">
-            {step === 'who' && 'Get Started'}
-            {step === 'wallet' && 'Connect Wallet'}
-            {step === 'agent-setup' && 'Agent Setup'}
+            {step === 'setup' && 'Set Up Your Agent'}
             {step === 'credentials' && 'Save Your Keys'}
-            {step === 'done' && '🎉 Ready!'}
+            {step === 'done' && 'Ready!'}
           </h2>
-          <button onClick={handleClose} className="text-gray-400 hover:text-white text-2xl leading-none">×</button>
+          <button onClick={handleClose} className="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
         </div>
 
         {/* Progress Steps */}
@@ -134,150 +115,13 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
         </div>
 
         <div className="px-6 pb-6">
-          {/* STEP 1: Who are you */}
-          {step === 'who' && (
-            <div className="space-y-3">
-              <p className="text-sm text-gray-400 mb-4">How will you use AgentPay?</p>
-              
-              <button
-                onClick={() => { setUserType('human'); setStep('wallet') }}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[var(--border)] hover:border-blue-500/50 transition-all"
-              >
-                <span className="text-3xl">👤</span>
-                <div className="text-left flex-1">
-                  <div className="font-semibold">I'm a Human</div>
-                  <div className="text-xs text-gray-500">I want to browse & pay for agent services manually</div>
-                </div>
-                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-
-              <button
-                onClick={() => { setUserType('agent'); setStep('wallet') }}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[var(--border)] hover:border-blue-500/50 transition-all"
-              >
-                <span className="text-3xl">🤖</span>
-                <div className="text-left flex-1">
-                  <div className="font-semibold">I'm connecting an AI Agent</div>
-                  <div className="text-xs text-gray-500">My agent needs to pay/receive for services programmatically</div>
-                </div>
-                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-          )}
-
-          {/* STEP 2: Wallet */}
-          {step === 'wallet' && walletChoice !== 'import' && (
-            <div className="space-y-2">
-              <p className="text-sm text-gray-400 mb-4">
-                {userType === 'agent'
-                  ? 'How should your agent handle payments?'
-                  : 'Choose how to connect your wallet'}
+          {/* STEP 1: Setup */}
+          {step === 'setup' && !showImport && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-400">
+                AgentPay creates a wallet for your agent. Fund it externally — your main keys stay safe.
               </p>
 
-              {userType === 'agent' && (
-                <button
-                  onClick={() => handleWalletConnect('create')}
-                  disabled={loading}
-                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-blue-500/30 bg-blue-500/5 hover:border-blue-500/50 transition-all"
-                >
-                  <span className="text-3xl">⚡</span>
-                  <div className="text-left flex-1">
-                    <div className="font-semibold">Auto-create wallet for agent</div>
-                    <div className="text-xs text-gray-500">Generate keys → save to agent's .env → done</div>
-                  </div>
-                  <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">Recommended</span>
-                </button>
-              )}
-
-              <button
-                onClick={() => handleWalletConnect('yours')}
-                disabled={loading}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[var(--border)] hover:border-blue-500/50 transition-all"
-              >
-                <span className="text-3xl">👛</span>
-                <div className="text-left flex-1">
-                  <div className="font-semibold">Yours Wallet</div>
-                  <div className="text-xs text-gray-500">
-                    {userType === 'agent'
-                      ? 'Agent uses your Yours Wallet (you approve txns)'
-                      : 'Connect browser extension'}
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => handleWalletConnect('handcash')}
-                disabled={loading}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[var(--border)] hover:border-blue-500/50 transition-all"
-              >
-                <span className="text-3xl">🤝</span>
-                <div className="text-left flex-1">
-                  <div className="font-semibold">HandCash</div>
-                  <div className="text-xs text-gray-500">OAuth connect</div>
-                </div>
-                <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">Requires App ID</span>
-              </button>
-
-              {userType !== 'agent' && (
-                <button
-                  onClick={() => handleWalletConnect('create')}
-                  disabled={loading}
-                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-[var(--border)] hover:border-blue-500/50 transition-all"
-                >
-                  <span className="text-3xl">⚡</span>
-                  <div className="text-left flex-1">
-                    <div className="font-semibold">Create New Wallet</div>
-                    <div className="text-xs text-gray-500">Generate keys instantly</div>
-                  </div>
-                </button>
-              )}
-
-              <button
-                onClick={() => setWalletChoice('import')}
-                disabled={loading}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[var(--border)] hover:border-blue-500/50 transition-all"
-              >
-                <span className="text-3xl">🔑</span>
-                <div className="text-left flex-1">
-                  <div className="font-semibold">Import Private Key</div>
-                  <div className="text-xs text-gray-500">Advanced — paste your WIF key</div>
-                </div>
-              </button>
-
-              <button onClick={() => { setStep('who'); setUserType(null) }} className="text-sm text-gray-500 hover:text-white mt-2">
-                ← Back
-              </button>
-            </div>
-          )}
-
-          {/* Import Key sub-step */}
-          {step === 'wallet' && walletChoice === 'import' && (
-            <div>
-              <button onClick={() => setWalletChoice(null)} className="text-sm text-gray-400 hover:text-white mb-4">← Back</button>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Private Key (WIF)</label>
-              <input
-                type="password"
-                value={importKey}
-                onChange={e => setImportKey(e.target.value)}
-                placeholder="Enter your BSV private key..."
-                className="input w-full mb-3"
-                autoFocus
-              />
-              <button onClick={handleImportSubmit} disabled={loading || !importKey.trim()} className="btn btn-primary w-full">
-                {loading ? 'Importing...' : 'Import & Continue'}
-              </button>
-            </div>
-          )}
-
-          {/* STEP 3: Agent Setup (agent flow only) */}
-          {step === 'agent-setup' && !credentials && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-400">Name your agent. This creates a wallet + identity in one step.</p>
-              
               <div>
                 <label className="label">Agent Name</label>
                 <input
@@ -290,84 +134,86 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
               </div>
 
               <button
-                onClick={async () => {
-                  try {
-                    await onConnect('provision', { agentName: agentName || 'My Agent' })
-                    setStep('agent-setup') // stay here to show .env
-                  } catch {
-                    // error handled by parent toast
-                  }
-                }}
+                onClick={handleProvision}
                 disabled={loading}
                 className="btn btn-primary w-full"
               >
-                {loading ? '⏳ Provisioning...' : '⚡ Create Agent Wallet + Identity'}
+                {loading ? 'Creating...' : 'Create Agent'}
               </button>
 
-              <button onClick={() => { setStep('wallet'); setWalletChoice(null) }} className="text-sm text-gray-500 hover:text-white">
-                ← Back
+              <button
+                onClick={() => setShowImport(true)}
+                className="text-sm text-gray-500 hover:text-blue-400 transition-colors w-full text-center"
+              >
+                Import Private Key (advanced)
               </button>
             </div>
           )}
 
-          {/* STEP 3b: Agent Setup — show .env after provision */}
-          {step === 'agent-setup' && credentials && (
+          {/* Import Key sub-view */}
+          {step === 'setup' && showImport && (
             <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-green-500 text-lg">✓</span>
-                <span className="font-semibold text-green-400">Agent provisioned!</span>
+              <button onClick={() => setShowImport(false)} className="text-sm text-gray-400 hover:text-white">&larr; Back</button>
+
+              <div>
+                <label className="label">Agent Name</label>
+                <input
+                  value={agentName}
+                  onChange={e => setAgentName(e.target.value)}
+                  placeholder="e.g., SecurityScanner-v1"
+                  className="input w-full"
+                />
               </div>
 
-              {/* Server-generated .env config */}
-              {(credentials as any).envConfig && (
-                <div>
-                  <label className="label">Agent .env Configuration</label>
-                  <div className="relative">
-                    <pre className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre max-h-48 overflow-y-auto">
-                      {(credentials as any).envConfig}
-                    </pre>
-                    <div className="absolute top-2 right-2">
-                      <CopyButton text={(credentials as any).envConfig} label="Copy .env" />
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Save this as <code className="text-blue-400">.env</code> in your agent's project directory
-                  </p>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button onClick={() => setStep('credentials')} className="btn btn-primary flex-1">
-                  View Full Credentials →
-                </button>
-                <button onClick={() => setStep('done')} className="btn btn-secondary">
-                  Skip, I copied the .env
-                </button>
+              <div>
+                <label className="label">Private Key (WIF)</label>
+                <input
+                  type="password"
+                  value={importKey}
+                  onChange={e => setImportKey(e.target.value)}
+                  placeholder="Enter your BSV private key..."
+                  className="input w-full"
+                  autoFocus
+                />
               </div>
+
+              <button
+                onClick={handleImportSubmit}
+                disabled={loading || !importKey.trim()}
+                className="btn btn-primary w-full"
+              >
+                {loading ? 'Importing...' : 'Import & Register'}
+              </button>
             </div>
           )}
 
-          {/* STEP 4: Credentials */}
+          {/* STEP 2: Credentials */}
           {step === 'credentials' && credentials && (
             <div className="space-y-3">
               <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <span>⚠️</span>
+                <div className="flex items-center gap-2">
                   <span className="font-semibold text-yellow-500 text-sm">Save these now — shown only once!</span>
                 </div>
               </div>
 
-              {credentials.walletId && (
-                <div className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3">
-                  <div className="text-xs text-gray-500 mb-1">Wallet ID</div>
-                  <div className="font-mono text-xs break-all">{credentials.walletId}</div>
-                  <CopyButton text={credentials.walletId} label="Copy" />
+              {/* .env config block */}
+              {((credentials as any).envConfig || true) && (
+                <div>
+                  <label className="label">.env Configuration</label>
+                  <div className="relative">
+                    <pre className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre max-h-48 overflow-y-auto">
+                      {(credentials as any).envConfig || generateAgentConfig()}
+                    </pre>
+                    <div className="absolute top-2 right-2">
+                      <CopyButton text={(credentials as any).envConfig || generateAgentConfig()} label="Copy .env" />
+                    </div>
+                  </div>
                 </div>
               )}
 
               {credentials.address && (
                 <div className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3">
-                  <div className="text-xs text-gray-500 mb-1">BSV Address</div>
+                  <div className="text-xs text-gray-500 mb-1">Deposit Address</div>
                   <div className="font-mono text-xs break-all">{credentials.address}</div>
                   <CopyButton text={credentials.address} label="Copy" />
                 </div>
@@ -389,34 +235,36 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
                 </div>
               )}
 
+              {credentials.walletId && (
+                <div className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3">
+                  <div className="text-xs text-gray-500 mb-1">Wallet ID</div>
+                  <div className="font-mono text-xs break-all">{credentials.walletId}</div>
+                  <CopyButton text={credentials.walletId} label="Copy" />
+                </div>
+              )}
+
               <button onClick={() => setStep('done')} className="btn btn-primary w-full">
-                ✓ I've saved everything
+                I've saved everything &rarr;
               </button>
             </div>
           )}
 
-          {/* STEP 5: Done */}
+          {/* STEP 3: Done */}
           {step === 'done' && (
             <div className="text-center py-4">
               <div className="text-5xl mb-4">🚀</div>
-              <h3 className="text-xl font-bold mb-2">
-                {userType === 'agent' ? 'Agent Connected!' : 'Wallet Connected!'}
-              </h3>
+              <h3 className="text-xl font-bold mb-2">Agent Connected!</h3>
               <p className="text-sm text-gray-400 mb-4">
-                {userType === 'agent'
-                  ? 'Your agent is ready. Fund the wallet to start transacting.'
-                  : 'Fund your wallet to start using services.'}
+                Fund your wallet to start transacting.
               </p>
 
-              {/* Fund wallet prompt */}
               {credentials?.address && (
                 <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4 mb-4 text-left">
                   <div className="flex items-center gap-2 mb-2">
-                    <span>💰</span>
-                    <span className="font-semibold text-green-400 text-sm">Send BSV to get started</span>
+                    <span className="font-semibold text-green-400 text-sm">Send BSV or MNEE to get started</span>
                   </div>
                   <p className="text-xs text-gray-400 mb-2">
-                    Send any amount of BSV to this address. Even $10 is enough for hundreds of transactions.
+                    Send any amount to this address. Even $10 is enough for hundreds of transactions.
                   </p>
                   <div className="flex items-center gap-2 bg-[var(--bg)] rounded p-2">
                     <code className="text-xs text-green-500 font-mono break-all flex-1">{credentials.address}</code>
@@ -425,33 +273,29 @@ ${credentials.privateKey ? `AGENTPAY_PRIVATE_KEY=${credentials.privateKey}` : '#
                 </div>
               )}
 
-              {userType === 'agent' && (
-                <div className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-4 mb-4 text-left">
-                  <div className="text-xs text-gray-500 mb-2">Quick test — paste in your agent:</div>
-                  <pre className="text-xs font-mono text-gray-300 overflow-x-auto">{`import { AgentsPay } from 'agentspay'
+              <div className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-4 mb-4 text-left">
+                <div className="text-xs text-gray-500 mb-2">Quick start — paste in your agent:</div>
+                <pre className="text-xs font-mono text-gray-300 overflow-x-auto">{`import { AgentPay } from 'agentspay'
 
-const ap = new AgentsPay({
+const ap = new AgentPay({
   apiUrl: process.env.AGENTPAY_API_URL,
   walletId: process.env.AGENTPAY_WALLET_ID,
   apiKey: process.env.AGENTPAY_API_KEY,
 })
 const services = await ap.search({ category: 'ai' })
 console.log('Available:', services.length)`}</pre>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button onClick={handleClose} className="btn btn-primary flex-1">
-                  {userType === 'agent' ? 'Go to Dashboard' : 'Browse Marketplace'}
-                </button>
               </div>
+
+              <button onClick={handleClose} className="btn btn-primary w-full">
+                Go to Dashboard
+              </button>
             </div>
           )}
 
           {/* Footer */}
           {step !== 'done' && (
             <div className="mt-4 text-center">
-              <p className="text-xs text-gray-500">🔒 Save your private key — it's shown only once and not stored on server</p>
+              <p className="text-xs text-gray-500">Your private key is shown once on creation — save it securely</p>
             </div>
           )}
         </div>

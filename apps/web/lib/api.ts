@@ -11,7 +11,9 @@ import type {
   Dispute,
   Webhook,
   Receipt,
-  Execution
+  Execution,
+  Job,
+  JobStatus
 } from './types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100'
@@ -118,7 +120,7 @@ class AgentPayAPI {
     })
   }
 
-  async importWallet(privateKey: string): Promise<Wallet> {
+  async importWallet(privateKey: string): Promise<{ wallet: Wallet; apiKey: string }> {
     const data = await this.fetch<{ ok: boolean; wallet: Wallet; apiKey: string }>(
       '/api/wallets/connect/import',
       {
@@ -126,7 +128,47 @@ class AgentPayAPI {
         body: JSON.stringify({ privateKey }),
       }
     )
-    return data.wallet
+    return { wallet: data.wallet, apiKey: data.apiKey }
+  }
+
+  async fundMnee(id: string, amount: number): Promise<{ funded: number; balance: number }> {
+    const data = await this.fetch<{ ok: boolean; funded: number; balance: number }>(
+      `/api/wallets/${id}/fund-mnee`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ amount }),
+      }
+    )
+    return { funded: data.funded, balance: data.balance }
+  }
+
+  async getLimits(id: string): Promise<{ txLimit: number; sessionLimit: number; dailyLimit: number }> {
+    const data = await this.fetch<{ ok: boolean; limits: { txLimit: number; sessionLimit: number; dailyLimit: number } }>(
+      `/api/wallets/${id}/limits`
+    )
+    return data.limits
+  }
+
+  async setLimits(id: string, limits: { txLimit?: number; sessionLimit?: number; dailyLimit?: number }): Promise<{ txLimit: number; sessionLimit: number; dailyLimit: number }> {
+    const data = await this.fetch<{ ok: boolean; limits: { txLimit: number; sessionLimit: number; dailyLimit: number } }>(
+      `/api/wallets/${id}/limits`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(limits),
+      }
+    )
+    return data.limits
+  }
+
+  async registerIdentity(walletId: string, name: string, type: string = 'agent'): Promise<{ identity: any }> {
+    const data = await this.fetch<{ ok: boolean; identity: any }>(
+      '/api/identity',
+      {
+        method: 'POST',
+        body: JSON.stringify({ walletId, name, type }),
+      }
+    )
+    return { identity: data.identity }
   }
 
   async disconnectWallet(id: string): Promise<void> {
@@ -252,6 +294,23 @@ class AgentPayAPI {
 
   async deleteWebhook(id: string): Promise<void> {
     await this.fetch(`/api/webhooks/${id}`, { method: 'DELETE' })
+  }
+
+  // ============ JOBS ============
+
+  async getJob(jobId: string): Promise<Job> {
+    const data = await this.fetch<{ ok: boolean; job: Job }>(`/api/jobs/${jobId}`)
+    return data.job
+  }
+
+  async getJobs(filters: { role?: string; status?: JobStatus; limit?: number } = {}): Promise<Job[]> {
+    const params = new URLSearchParams()
+    if (filters.role) params.set('role', filters.role)
+    if (filters.status) params.set('status', filters.status)
+    if (filters.limit) params.set('limit', filters.limit.toString())
+    const query = params.toString()
+    const data = await this.fetch<{ ok: boolean; jobs: Job[] }>(`/api/jobs${query ? `?${query}` : ''}`)
+    return data.jobs
   }
 
   // ============ REPUTATION ============

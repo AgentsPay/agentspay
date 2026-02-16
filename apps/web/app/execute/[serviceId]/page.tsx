@@ -11,7 +11,7 @@ import { useToast } from '@/lib/useToast'
 import { ToastContainer } from '@/components/Toast'
 import { formatSats, formatDate, getExplorerUrl, formatPrice, satsToUsd, formatMneeWithBsv } from '@/lib/utils'
 import { useBsvPrice } from '@/lib/useBsvPrice'
-import type { Service, Wallet, ExecuteResult, Reputation, Receipt } from '@/lib/types'
+import type { Service, Wallet, ExecuteResult, Reputation, Receipt, Job } from '@/lib/types'
 
 export default function ExecuteServicePage() {
   const params = useParams()
@@ -27,9 +27,11 @@ export default function ExecuteServicePage() {
   const [inputValid, setInputValid] = useState(false)
   const [parsedInput, setParsedInput] = useState<any>(null)
   const [result, setResult] = useState<ExecuteResult | null>(null)
+  const [job, setJob] = useState<Job | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [executing, setExecuting] = useState(false)
+  const [polling, setPolling] = useState(false)
   const [loading, setLoading] = useState(true)
   const [disputeReason, setDisputeReason] = useState('')
   const [disputeEvidence, setDisputeEvidence] = useState('')
@@ -112,29 +114,22 @@ export default function ExecuteServicePage() {
       setExecuting(true)
       setError(null)
       setResult(null)
+      setJob(null)
       setReceipt(null)
 
       const res = await api.executeService(serviceId, selectedWalletId, parsedInput)
       setResult(res)
-      showSuccess('Service executed successfully!')
-      
-      // Load receipt if available
-      if (res.paymentId) {
-        try {
-          const rcpt = await api.getReceipt(res.paymentId)
-          setReceipt(rcpt)
-          
-          // Set dispute window countdown
-          if (service.disputeWindow) {
-            const endsAt = new Date(Date.now() + service.disputeWindow * 60 * 1000)
-            setDisputeWindowEnds(endsAt)
-          }
-        } catch (err) {
-          // Receipt might not be available yet
-          console.error('Failed to load receipt:', err)
-        }
+
+      if (res.jobId) {
+        // Async job model — start polling
+        showSuccess('Job submitted! Waiting for provider...')
+        setPolling(true)
+        pollJob(res.jobId)
+      } else {
+        // Legacy sync result (shouldn't happen with new API, but handle gracefully)
+        showSuccess('Service executed successfully!')
       }
-      
+
       await loadWallet() // Refresh balance
     } catch (err: any) {
       setError(err.message)
@@ -142,6 +137,58 @@ export default function ExecuteServicePage() {
     } finally {
       setExecuting(false)
     }
+  }
+
+  function pollJob(jobId: string) {
+    const interval = setInterval(async () => {
+      try {
+        const j = await api.getJob(jobId)
+        setJob(j)
+
+        if (j.status === 'completed') {
+          clearInterval(interval)
+          setPolling(false)
+          showSuccess('Job completed!')
+
+          // Update result with output
+          setResult(prev => prev ? { ...prev, output: j.output, status: 'completed' } : prev)
+
+          // Load receipt
+          if (j.paymentId) {
+            try {
+              const rcpt = await api.getReceipt(j.paymentId)
+              setReceipt(rcpt)
+              if (service?.disputeWindow) {
+                const endsAt = new Date(Date.now() + service.disputeWindow * 60 * 1000)
+                setDisputeWindowEnds(endsAt)
+              }
+            } catch {
+              // Receipt might not be available yet
+            }
+          }
+
+          await loadWallet()
+        } else if (j.status === 'failed') {
+          clearInterval(interval)
+          setPolling(false)
+          setError(j.error || 'Provider reported failure. Payment refunded.')
+          showError('Job failed. Payment refunded.')
+        } else if (j.status === 'expired') {
+          clearInterval(interval)
+          setPolling(false)
+          setError('Job expired — provider did not respond in time. Payment refunded.')
+          showError('Job expired. Payment refunded.')
+        }
+      } catch {
+        // Poll failure — keep trying
+      }
+    }, 2000)
+
+    // Safety: stop polling after 10 minutes
+    setTimeout(() => {
+      clearInterval(interval)
+      setPolling(false)
+    }, 600000)
   }
 
   async function handleOpenDispute() {
@@ -406,18 +453,49 @@ export default function ExecuteServicePage() {
         <div className="card mb-6">
           <button
             onClick={handleExecute}
-            disabled={!canExecute || executing}
+            disabled={!canExecute || executing || polling}
             className="btn btn-primary w-full text-lg"
           >
-            {executing ? 'Executing...' : `Execute Service (${service.currency === 'BSV' ? formatSats(service.price) + ' sats' : formatPrice(service.price, service.currency)})`}
+            {executing ? 'Submitting...' : polling ? 'Waiting for provider...' : `Execute Service (${service.currency === 'BSV' ? formatSats(service.price) + ' sats' : formatPrice(service.price, service.currency)})`}
           </button>
-          
+
           {!selectedWallet && (
             <p className="text-sm text-gray-400 mt-3 text-center">
               Please select a wallet
             </p>
           )}
         </div>
+
+        {/* Job Status (while polling) */}
+        {polling && job && (
+          <div className="card bg-blue-500/5 border-blue-500/20 mb-6">
+            <div className="flex items-start gap-3">
+              <span className="text-blue-500 text-xl animate-pulse">
+                {job.status === 'pending' ? '...' : '...'}
+              </span>
+              <div>
+                <div className="font-semibold text-blue-500 mb-1">
+                  {job.status === 'pending' ? 'Waiting for provider...' : 'Provider working...'}
+                </div>
+                <div className="text-sm text-gray-400">
+                  Job ID: <code>{job.id.slice(0, 12)}...</code>
+                  {job.expiresAt && (
+                    <span className="ml-3">Expires: {formatDate(job.expiresAt)}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {polling && !job && (
+          <div className="card bg-blue-500/5 border-blue-500/20 mb-6">
+            <div className="flex items-center gap-3">
+              <span className="text-blue-500 text-xl animate-pulse">...</span>
+              <div className="font-semibold text-blue-500">Waiting for provider...</div>
+            </div>
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -433,7 +511,7 @@ export default function ExecuteServicePage() {
         )}
 
         {/* Result with Receipt */}
-        {result && (
+        {result && (result.status === 'completed' || result.output) && !polling && (
           <div className="space-y-6">
             <div className="card bg-green-500/5 border-green-500/20">
               <div className="flex items-start gap-3 mb-4">
@@ -441,10 +519,10 @@ export default function ExecuteServicePage() {
                 <div>
                   <h3 className="text-xl font-semibold text-green-500 mb-1">Success!</h3>
                   <div className="text-sm text-gray-400">
-                    Executed in {result.executionTimeMs}ms
+                    {result.executionTimeMs ? `Executed in ${result.executionTimeMs}ms` : 'Job completed'}
                   </div>
                 </div>
-                {result.receipt && (
+                {(result.receipt || receipt) && (
                   <div className="ml-auto px-3 py-1 text-sm rounded bg-green-500/10 text-green-500">
                     ✓ Verified Receipt
                   </div>

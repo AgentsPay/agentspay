@@ -175,4 +175,4 @@ PS> (Invoke-WebRequest http://localhost:3100/api/health).Headers["Access-Control
 
 ---
 
-**Contact:** See full report at `D:\agentspay\REDTEAM_REPORT.md`
+**Contact:** See full report at `docs/reports/security/REDTEAM_REPORT.md`

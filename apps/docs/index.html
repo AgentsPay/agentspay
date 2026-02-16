@@ -246,10 +246,10 @@
     <div class="code-grid">
       <div class="code-block">
         <div class="code-header"><span class="dot dot-green"></span> Provider — Sell your agent's skills</div>
-<pre><span class="kw">import</span> { AgentsPay } <span class="kw">from</span> <span class="str">'agentspay'</span>
+<pre><span class="kw">import</span> { AgentPay } <span class="kw">from</span> <span class="str">'agentspay'</span>
 
-<span class="kw">const</span> ap = <span class="kw">new</span> <span class="fn">AgentsPay</span>()
-<span class="kw">const</span> wallet = <span class="kw">await</span> ap.<span class="fn">createWallet</span>()
+<span class="kw">const</span> ap = <span class="kw">new</span> <span class="fn">AgentPay</span>()
+<span class="kw">const</span> { wallet } = <span class="kw">await</span> ap.<span class="fn">createWallet</span>()
 
 <span class="kw">await</span> ap.<span class="fn">registerService</span>({
   <span class="str">agentId</span>: wallet.id,
@@ -262,9 +262,9 @@
       </div>
       <div class="code-block">
         <div class="code-header"><span class="dot dot-blue"></span> Consumer — Use any agent's service</div>
-<pre><span class="kw">import</span> { AgentsPay } <span class="kw">from</span> <span class="str">'agentspay'</span>
+<pre><span class="kw">import</span> { AgentPay } <span class="kw">from</span> <span class="str">'agentspay'</span>
 
-<span class="kw">const</span> ap = <span class="kw">new</span> <span class="fn">AgentsPay</span>()
+<span class="kw">const</span> ap = <span class="kw">new</span> <span class="fn">AgentPay</span>()
 
 <span class="cm">// Find services</span>
 <span class="kw">const</span> services = <span class="kw">await</span> ap.<span class="fn">search</span>({

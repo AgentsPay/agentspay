@@ -70,6 +70,11 @@ export class DisputeManager {
 
     // Update payment status to disputed
     db.prepare('UPDATE payments SET disputeStatus = ? WHERE id = ?').run('disputed', paymentId)
+    db.prepare(`
+      UPDATE service_contracts
+      SET status = 'disputed'
+      WHERE id = (SELECT contractId FROM payments WHERE id = ?)
+    `).run(paymentId)
 
     const dispute = this.getById(id)
     if (dispute) {

@@ -8,7 +8,7 @@ export async function registerCommand(options: {
   description: string;
   category: string;
   price: string;
-  endpoint: string;
+  endpoint?: string;
   currency?: string;
   method?: string;
 }): Promise<void> {
@@ -28,18 +28,20 @@ export async function registerCommand(options: {
   const spinner = ora('Registering service...').start();
 
   try {
+    const body: Record<string, any> = {
+      agentId: config.walletId,
+      name: options.name,
+      description: options.description,
+      category: options.category,
+      price,
+      currency: (options.currency || 'BSV').toUpperCase(),
+    };
+    if (options.endpoint) body.endpoint = options.endpoint;
+    if (options.method) body.method = options.method.toUpperCase();
+
     const result = await apiRequest('/api/services', {
       method: 'POST',
-      body: JSON.stringify({
-        agentId: config.walletId,
-        name: options.name,
-        description: options.description,
-        category: options.category,
-        price,
-        currency: (options.currency || 'BSV').toUpperCase(),
-        endpoint: options.endpoint,
-        method: (options.method || 'POST').toUpperCase(),
-      }),
+      body: JSON.stringify(body),
     });
 
     const service = result.service || result;
@@ -53,7 +55,7 @@ export async function registerCommand(options: {
     console.log(`  ${chalk.cyan('Name:')}      ${options.name}`);
     console.log(`  ${chalk.cyan('Category:')}  ${options.category}`);
     console.log(`  ${chalk.cyan('Price:')}     ${price.toLocaleString()} sats`);
-    console.log(`  ${chalk.cyan('Endpoint:')}  ${options.endpoint}`);
+    console.log(`  ${chalk.cyan('Model:')}     Job queue (providers poll for work)`);
     console.log('');
     console.log(chalk.green('  Other agents can now discover and pay for your service!'));
     console.log('');

@@ -20,10 +20,14 @@ export default function WalletPage() {
   const [newApiKey, setNewApiKey] = useState<string | null>(null)
   const [newPrivateKey, setNewPrivateKey] = useState<string | null>(null)
   const [fundAmount, setFundAmount] = useState('10000')
+  const [fundMneeAmount, setFundMneeAmount] = useState('1000')
   const [wizardCreds, setWizardCreds] = useState<{ apiKey?: string; privateKey?: string; walletId?: string; address?: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState<'transactions' | 'utxos'>('transactions')
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [limits, setLimits] = useState<{ txLimit: number; sessionLimit: number; dailyLimit: number } | null>(null)
+  const [editingLimits, setEditingLimits] = useState(false)
+  const [limitForm, setLimitForm] = useState({ txLimit: '', sessionLimit: '', dailyLimit: '' })
 
   const bsvPrice = useBsvPrice()
   const { toasts, success, error: showError, dismiss } = useToast()
@@ -42,6 +46,7 @@ export default function WalletPage() {
   useEffect(() => {
     if (selectedWalletId) {
       loadWallet(selectedWalletId)
+      loadLimits()
     }
   }, [selectedWalletId])
 
@@ -90,7 +95,6 @@ export default function WalletPage() {
         setNewApiKey(result.agent.apiKey)
         setNewPrivateKey(result.agent.privateKey)
         setSelectedWalletId(result.agent.walletId)
-        setShowOnboarding(false)
         setWizardCreds({
           apiKey: result.agent.apiKey,
           privateKey: result.agent.privateKey,
@@ -100,52 +104,25 @@ export default function WalletPage() {
           quickStart: result.quickStart,
         } as any)
         success('Agent provisioned! Save your credentials.')
-      } else if (provider === 'internal') {
-        const { wallet: w, apiKey, privateKey } = await api.connectInternal()
-        const updated = [...wallets, w.id]
-        setWallets(updated)
-        localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
-        setNewWallet(w)
-        setNewApiKey(apiKey)
-        setNewPrivateKey(privateKey)
-        setSelectedWalletId(w.id)
-        setShowOnboarding(false)
-        setWizardCreds({ apiKey, privateKey, walletId: w.id, address: w.address })
-        success('Wallet created! Save your credentials below.')
-      } else if (provider === 'handcash') {
-        const { authUrl } = await api.connectHandCash()
-        if (authUrl) {
-          window.location.href = authUrl
-        } else {
-          showError('HandCash not configured on server.')
-        }
-      } else if (provider === 'yours') {
-        // @ts-ignore
-        const yoursWallet = typeof window !== 'undefined' && ((window as any).yours || (window as any).panda)
-        if (!yoursWallet) {
-          showError('Yours Wallet extension not detected. Install from yours.org')
-          return
-        }
-        const pubKey = await yoursWallet.getPublicKey()
-        const w = await api.connectYours(pubKey)
-        const updated = [...wallets, w.id]
-        setWallets(updated)
-        localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
-        setSelectedWalletId(w.id)
-        setShowOnboarding(false)
-        success('Yours Wallet connected!')
       } else if (provider === 'import') {
         if (!data?.privateKey) return
-        const w = await api.importWallet(data.privateKey)
+        const { wallet: w, apiKey } = await api.importWallet(data.privateKey)
         const updated = [...wallets, w.id]
         setWallets(updated)
         localStorage.setItem('agentpay_wallets', JSON.stringify(updated))
         setSelectedWalletId(w.id)
-        setShowOnboarding(false)
+        setWizardCreds({ apiKey, walletId: w.id, address: w.address })
         success('Wallet imported successfully!')
+      } else if (provider === 'register-identity') {
+        // Register identity for an already-imported wallet
+        if (!wizardCreds?.walletId) return
+        const agentName = data?.agentName || 'My Agent'
+        await api.registerIdentity(wizardCreds.walletId, agentName, 'agent')
+        success('Agent identity registered!')
       }
     } catch (err: any) {
       showError(err.message || `Failed to connect via ${provider}`)
+      throw err // re-throw so wizard catch blocks can handle it
     } finally {
       setLoading(false)
     }
@@ -179,6 +156,55 @@ export default function WalletPage() {
       success(`Funded ${formatSats(result.funded)} sats!`)
       await loadWallet(selectedWalletId)
       setFundAmount('10000')
+    } catch (err: any) {
+      showError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleFundMnee() {
+    if (!selectedWalletId) return
+    try {
+      setLoading(true)
+      const result = await api.fundMnee(selectedWalletId, Number(fundMneeAmount))
+      success(`Funded ${(result.funded / 100).toFixed(2)} MNEE!`)
+      await loadWallet(selectedWalletId)
+      setFundMneeAmount('1000')
+    } catch (err: any) {
+      showError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function loadLimits() {
+    if (!selectedWalletId) return
+    try {
+      const l = await api.getLimits(selectedWalletId)
+      setLimits(l)
+      setLimitForm({
+        txLimit: String(l.txLimit),
+        sessionLimit: String(l.sessionLimit),
+        dailyLimit: String(l.dailyLimit),
+      })
+    } catch {
+      // limits may not be set yet
+    }
+  }
+
+  async function handleSaveLimits() {
+    if (!selectedWalletId) return
+    try {
+      setLoading(true)
+      const updated = await api.setLimits(selectedWalletId, {
+        txLimit: Number(limitForm.txLimit),
+        sessionLimit: Number(limitForm.sessionLimit),
+        dailyLimit: Number(limitForm.dailyLimit),
+      })
+      setLimits(updated)
+      setEditingLimits(false)
+      success('Spending limits updated!')
     } catch (err: any) {
       showError(err.message)
     } finally {
@@ -386,14 +412,14 @@ export default function WalletPage() {
                     </p>
                   </div>
 
-                  {/* Demo fund — prominent card */}
+                  {/* Demo fund — BSV */}
                   <div className="mt-4 bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-lg">🧪</span>
-                      <h4 className="font-semibold text-purple-400">Test Mode: Fund Wallet</h4>
+                      <h4 className="font-semibold text-purple-400">Test Mode: Fund BSV</h4>
                     </div>
                     <p className="text-xs text-gray-400 mb-3">
-                      Add test balance to try out the platform. Only works when demo mode is enabled on the server.
+                      Add test BSV balance. Only works when demo mode is enabled on the server.
                     </p>
                     <div className="flex gap-2">
                       <input
@@ -409,9 +435,134 @@ export default function WalletPage() {
                         disabled={loading || !fundAmount}
                         className="btn btn-primary text-sm bg-purple-600 hover:bg-purple-700"
                       >
-                        Fund (Demo)
+                        Fund BSV (Demo)
                       </button>
                     </div>
+                  </div>
+
+                  {/* Demo fund — MNEE */}
+                  <div className="mt-3 bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">💵</span>
+                      <h4 className="font-semibold text-blue-400">Test Mode: Fund MNEE</h4>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-3">
+                      Add test MNEE (stablecoin) balance. Amount is in cents (e.g., 1000 = $10.00).
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={fundMneeAmount}
+                        onChange={(e) => setFundMneeAmount(e.target.value)}
+                        placeholder="Amount in cents"
+                        className="input flex-1"
+                        min="0"
+                      />
+                      <button
+                        onClick={handleFundMnee}
+                        disabled={loading || !fundMneeAmount}
+                        className="btn btn-primary text-sm bg-blue-600 hover:bg-blue-700"
+                      >
+                        Fund MNEE (Demo)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Spending Limits */}
+            <div className="card mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold">Spending Limits</h2>
+                {limits && !editingLimits && (
+                  <button
+                    onClick={() => setEditingLimits(true)}
+                    className="btn btn-secondary text-sm"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              {!limits && !editingLimits && (
+                <div className="text-center py-6">
+                  <p className="text-sm text-gray-400 mb-3">No spending limits configured.</p>
+                  <button
+                    onClick={() => {
+                      setLimitForm({ txLimit: '100000', sessionLimit: '500000', dailyLimit: '1000000' })
+                      setEditingLimits(true)
+                    }}
+                    className="btn btn-secondary text-sm"
+                  >
+                    Set Limits
+                  </button>
+                </div>
+              )}
+
+              {limits && !editingLimits && (
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="bg-[var(--bg)] rounded-lg p-4">
+                    <div className="text-xs text-gray-500 mb-1">Per Transaction</div>
+                    <div className="text-lg font-semibold">{formatSats(limits.txLimit)} <span className="text-sm text-gray-500">sats</span></div>
+                  </div>
+                  <div className="bg-[var(--bg)] rounded-lg p-4">
+                    <div className="text-xs text-gray-500 mb-1">Per Session</div>
+                    <div className="text-lg font-semibold">{formatSats(limits.sessionLimit)} <span className="text-sm text-gray-500">sats</span></div>
+                  </div>
+                  <div className="bg-[var(--bg)] rounded-lg p-4">
+                    <div className="text-xs text-gray-500 mb-1">Daily</div>
+                    <div className="text-lg font-semibold">{formatSats(limits.dailyLimit)} <span className="text-sm text-gray-500">sats</span></div>
+                  </div>
+                </div>
+              )}
+
+              {editingLimits && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Per Transaction Limit (sats)</label>
+                    <input
+                      type="number"
+                      value={limitForm.txLimit}
+                      onChange={e => setLimitForm(f => ({ ...f, txLimit: e.target.value }))}
+                      className="input w-full"
+                      min="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Per Session Limit (sats)</label>
+                    <input
+                      type="number"
+                      value={limitForm.sessionLimit}
+                      onChange={e => setLimitForm(f => ({ ...f, sessionLimit: e.target.value }))}
+                      className="input w-full"
+                      min="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Daily Limit (sats)</label>
+                    <input
+                      type="number"
+                      value={limitForm.dailyLimit}
+                      onChange={e => setLimitForm(f => ({ ...f, dailyLimit: e.target.value }))}
+                      className="input w-full"
+                      min="0"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveLimits}
+                      disabled={loading}
+                      className="btn btn-primary text-sm"
+                    >
+                      {loading ? 'Saving...' : 'Save Limits'}
+                    </button>
+                    <button
+                      onClick={() => setEditingLimits(false)}
+                      className="btn btn-secondary text-sm"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
               )}
@@ -445,7 +596,7 @@ export default function WalletPage() {
                           <div>
                             <a href={getExplorerUrl(tx.txid)} target="_blank" rel="noopener noreferrer"
                               className="font-mono text-sm text-blue-500 hover:underline">
-                              {tx.txid.slice(0, 12)}...{tx.txid.slice(-12)}
+                              {tx.txid?.slice(0, 12)}...{tx.txid?.slice(-12)}
                             </a>
                             <div className="text-xs text-gray-500 mt-1">
                               {formatDate(new Date(tx.time * 1000))} • {tx.confirmations} confirmations

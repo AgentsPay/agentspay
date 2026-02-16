@@ -33,8 +33,8 @@ export interface Service {
   category: string
   price: number
   currency: Currency
-  endpoint: string
-  method: 'POST' | 'GET'
+  endpoint?: string
+  method?: string
   inputSchema?: any
   outputSchema?: any
   timeout: number        // seconds (default 30)
@@ -87,19 +87,40 @@ export interface Reputation {
 
 export interface ExecuteResult {
   ok: boolean
+  jobId?: string
   paymentId: string
-  output: any
-  executionTimeMs: number
-  cost: {
+  status?: 'pending' | 'in_progress' | 'completed' | 'failed' | 'expired'
+  expiresAt?: string
+  output?: any
+  executionTimeMs?: number
+  cost?: {
     amount: number
     amountFormatted: string
     platformFee: number
     platformFeeFormatted: string
     currency: Currency
   }
-  txId: string
-  disputeWindowMinutes: number
+  txId?: string
+  disputeWindowMinutes?: number
   receipt?: Receipt
+}
+
+export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'expired'
+
+export interface Job {
+  id: string
+  serviceId: string
+  paymentId: string
+  buyerWalletId: string
+  providerWalletId: string
+  status: JobStatus
+  input?: any
+  output?: any
+  error?: string
+  createdAt: string
+  acceptedAt?: string
+  completedAt?: string
+  expiresAt: string
 }
 
 export interface Receipt {

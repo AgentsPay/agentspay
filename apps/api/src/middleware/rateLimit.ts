@@ -6,3 +6,10 @@ export const apiRateLimit = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
 })
+
+export const adminRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+})

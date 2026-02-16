@@ -8,10 +8,14 @@ export { ProviderManager } from './wallet/providerManager'
 
 // Payment
 export { PaymentEngine } from './payment/payment'
+export type { SettlementAction, SettlementActorType, SettlementApproval, AdminMultisigSigningPayload } from './payment/payment'
 
 // Registry
 export { Registry } from './registry/registry'
 export { getDb } from './registry/db'
+
+// Jobs
+export { JobManager } from './jobs/jobManager'
 
 // Disputes
 export { DisputeManager, DisputeResolution } from './disputes/dispute'
@@ -39,3 +43,7 @@ export * from './utils/validation'
 // Agent Identity
 export { AgentIdentityManager } from './identity/agentIdentity'
 export type { AgentIdentity, IdentityAttestation } from './identity/agentIdentity'
+
+// Contracts
+export { ContractManager } from './contracts/contract'
+export type { ServiceContract, ContractStatus } from './contracts/contract'

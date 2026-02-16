@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid'
 import crypto from 'crypto'
 import { getDb } from '../registry/db'
+import { validateWebhookUrl } from '../utils/validation'
 
 export interface Webhook {
   id: string
@@ -50,14 +51,7 @@ export class WebhookManager {
     const db = getDb()
     
     // Validate URL
-    try {
-      const url = new URL(params.url)
-      if (!['http:', 'https:'].includes(url.protocol)) {
-        throw new Error('Webhook URL must be http or https')
-      }
-    } catch (e: any) {
-      throw new Error(`Invalid webhook URL: ${e.message}`)
-    }
+    validateWebhookUrl(params.url)
 
     // Validate events
     if (!Array.isArray(params.events) || params.events.length === 0) {
@@ -147,14 +141,7 @@ export class WebhookManager {
     const params: any[] = []
 
     if (updates.url !== undefined) {
-      try {
-        const url = new URL(updates.url)
-        if (!['http:', 'https:'].includes(url.protocol)) {
-          throw new Error('Webhook URL must be http or https')
-        }
-      } catch (e: any) {
-        throw new Error(`Invalid webhook URL: ${e.message}`)
-      }
+      validateWebhookUrl(updates.url)
       fields.push('url = ?')
       params.push(updates.url)
     }

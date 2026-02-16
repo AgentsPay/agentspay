@@ -75,9 +75,9 @@ export default function DocsPage() {
           <CodeBlock code="npm install agentspay" />
 
           <h3 className="text-lg font-semibold mt-6 mb-2">2. Create a Wallet (Get an API Key)</h3>
-          <CodeBlock code={`import { AgentsPay } from 'agentspay'
+          <CodeBlock code={`import { AgentPay } from 'agentspay'
 
-const ap = new AgentsPay({ apiUrl: 'https://api.agentspay.com' })
+const ap = new AgentPay({ apiUrl: 'https://api.agentspay.com' })
 
 // Create a wallet — save the apiKey and privateKey!
 const { wallet, apiKey, privateKey } = await ap.createWallet()

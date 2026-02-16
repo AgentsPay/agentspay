@@ -45,6 +45,8 @@ const result = await ap.execute(services[0].id, wallet.id, {
 // ✅ Paid 5,000 sats → got scan results
 ```
 
+Compatibility note: `AgentPay` is the recommended class name. `AgentsPay` remains available as a backward-compatible alias.
+
 ### MCP Server (Claude, OpenAI, any MCP client)
 
 ```json
@@ -54,8 +56,8 @@ const result = await ap.execute(services[0].id, wallet.id, {
       "command": "npx",
       "args": ["@agentspay/mcp"],
       "env": {
-        "AGENTSPAY_API_URL": "https://api.agentspay.com",
-        "AGENTSPAY_API_KEY": "sk_live_..."
+        "AGENTPAY_API_URL": "https://api.agentspay.com",
+        "AGENTPAY_API_KEY": "sk_live_..."
       }
     }
   }
@@ -73,6 +75,15 @@ const result = await ap.execute(services[0].id, wallet.id, {
 - `set_spending_limits` — Per-tx, session, daily caps
 - `get_receipt` — Cryptographic execution receipts
 - `get_reputation` — On-chain trust scores
+
+## Documentation
+
+- `docs/README.md` — documentation index
+- `docs/ADMIN_SECURITY_RUNBOOK.md` — admin hardening and operational controls
+- `docs/BSV_CONTRACT_FLOW.md` — contract/payment flow
+- `docs/SECURITY_30_60_90_PLAN.md` — security roadmap
+- `docs/reports/security` — red-team and security audit reports
+- `docs/reports/qa` — QA reports
 
 ## Architecture
 
@@ -103,18 +114,14 @@ const result = await ap.execute(services[0].id, wallet.id, {
 Prevent runaway AI costs with per-transaction, per-session, and daily spending caps:
 
 ```typescript
-// Via SDK
-await ap.setLimits(walletId, {
-  txLimit: 10000,      // Max 10K sats per transaction
-  sessionLimit: 50000, // Max 50K sats per session
-  dailyLimit: 100000,  // Max 100K sats per day
-})
-
 // Via CLI
 npx agentspay limits --tx 10000 --daily 100000
 
-// Via MCP
-// Claude/AI agents can call set_spending_limits tool
+// Via REST API (requires x-api-key)
+curl -X PUT "https://api.agentspay.com/api/wallets/<walletId>/limits" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <apiKey>" \
+  -d '{"txLimit":10000,"sessionLimit":50000,"dailyLimit":100000}'
 ```
 
 ## How It Works

@@ -60,8 +60,6 @@ export default function DashboardPage() {
     category: 'utility',
     price: '1000',
     currency: 'BSV' as 'BSV' | 'MNEE',
-    endpoint: '',
-    method: 'POST',
     timeout: '30',
     disputeWindow: '30',
   })
@@ -176,11 +174,9 @@ export default function DashboardPage() {
         category: formData.category,
         price: Number(formData.price),
         currency: formData.currency,
-        endpoint: formData.endpoint,
-        method: formData.method as 'POST' | 'GET',
         timeout: Number(formData.timeout),
         disputeWindow: Number(formData.disputeWindow),
-      })
+      } as any)
       success('Service registered successfully!')
       setFormData({
         name: '',
@@ -188,8 +184,6 @@ export default function DashboardPage() {
         category: 'utility',
         price: '1000',
         currency: 'BSV',
-        endpoint: '',
-        method: 'POST',
         timeout: '30',
         disputeWindow: '30',
       })
@@ -552,35 +546,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="label">HTTP Method</label>
-                <select
-                  value={formData.method}
-                  onChange={(e) => setFormData({ ...formData, method: e.target.value })}
-                  className="input"
-                  required
-                >
-                  <option value="GET">GET</option>
-                  <option value="POST">POST</option>
-                  <option value="PUT">PUT</option>
-                  <option value="DELETE">DELETE</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="label">Endpoint URL</label>
-                <input
-                  type="url"
-                  value={formData.endpoint}
-                  onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
-                  className="input"
-                  required
-                  placeholder="https://..."
-                />
-              </div>
-            </div>
-
             <button type="submit" disabled={loading} className="btn btn-primary">
               {loading ? 'Registering...' : 'Register Service'}
             </button>
@@ -625,7 +590,6 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-3">
-                        <code className="text-xs text-gray-500 flex-1 truncate">{service.endpoint}</code>
                         <button
                           onClick={() => handleToggleService(service.id, service.active)}
                           className={`text-xs px-3 py-1 rounded ${

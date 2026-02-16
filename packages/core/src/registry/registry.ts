@@ -14,13 +14,14 @@ export class Registry {
     const disputeWindow = service.disputeWindow || 30
     const currency = service.currency || 'BSV'
     const method = service.method || 'POST'
+    const endpoint = service.endpoint || ''
 
     db.prepare(`
       INSERT INTO services (id, agentId, name, description, category, price, currency, endpoint, method, inputSchema, outputSchema, active, timeout, disputeWindow, createdAt, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
     `).run(
       id, service.agentId, service.name, service.description, service.category,
-      service.price, currency, service.endpoint, method,
+      service.price, currency, endpoint, method,
       service.inputSchema ? JSON.stringify(service.inputSchema) : null,
       service.outputSchema ? JSON.stringify(service.outputSchema) : null,
       timeout, disputeWindow,

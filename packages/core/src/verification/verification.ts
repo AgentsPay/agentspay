@@ -10,13 +10,21 @@ import crypto from 'crypto'
 import { getDb } from '../registry/db'
 import type { ExecutionReceipt, ReceiptData, ReceiptVerification } from './receipt'
 import type { Payment } from '../types'
+import { config } from '../config'
 
 export class VerificationManager {
   private platformSecret: string
 
   constructor(platformSecret?: string) {
-    // Use environment variable or generate deterministic secret
-    this.platformSecret = platformSecret || process.env.AGENTPAY_PLATFORM_SECRET || 'agentspay-platform-secret-change-in-production'
+    const configured = platformSecret || process.env.AGENTPAY_PLATFORM_SECRET
+    if (!configured) {
+      if (!config.demoMode) {
+        throw new Error('AGENTPAY_PLATFORM_SECRET is required in non-demo mode')
+      }
+      this.platformSecret = 'agentspay-platform-secret-demo-only'
+      return
+    }
+    this.platformSecret = configured
   }
 
   /**

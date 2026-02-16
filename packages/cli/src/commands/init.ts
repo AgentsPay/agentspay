@@ -6,7 +6,7 @@ import { apiRequest } from '../api';
 export async function initCommand(options: { apiUrl?: string; apiKey?: string }): Promise<void> {
   console.log(chalk.bold.cyan('\n⚡ AgentPay Setup\n'));
 
-  const apiUrl = options.apiUrl || 'http://localhost:4000';
+  const apiUrl = options.apiUrl || 'http://localhost:3100';
 
   // Step 1: Save API URL
   saveConfig({ apiUrl });

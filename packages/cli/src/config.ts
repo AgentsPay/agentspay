@@ -54,9 +54,13 @@ export function clearConfig(): void {
 }
 
 function defaultConfig(): AgentPayConfig {
+  // AGENTSPAY_* is kept only as legacy fallback.
+  const apiUrl = process.env.AGENTPAY_API_URL || process.env.AGENTSPAY_API_URL || 'https://api.agentspay.com';
+  const apiKey = process.env.AGENTPAY_API_KEY || process.env.AGENTSPAY_API_KEY || null;
+
   return {
-    apiUrl: process.env.AGENTSPAY_API_URL || 'https://api.agentspay.com',
-    apiKey: process.env.AGENTSPAY_API_KEY || null,
+    apiUrl,
+    apiKey,
     walletId: null,
     address: null,
     network: 'testnet',

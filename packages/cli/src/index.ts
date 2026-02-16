@@ -23,7 +23,7 @@ ${chalk.bold('Examples:')}
   $ agentspay init
 
   ${chalk.dim('# Initialize with custom API URL')}
-  $ agentspay init --api-url http://localhost:4000
+  $ agentspay init --api-url http://localhost:3100
 
   ${chalk.dim('# Check wallet balance')}
   $ agentspay status
@@ -51,7 +51,7 @@ ${chalk.dim('No gas fees. No vendor lock-in. Real micropayments.')}
 program
   .command('init')
   .description('Initialize AgentPay and create a wallet')
-  .option('--api-url <url>', 'API server URL', 'http://localhost:4000')
+  .option('--api-url <url>', 'API server URL', 'http://localhost:3100')
   .option('--api-key <key>', 'Use existing API key instead of creating new wallet')
   .action(initCommand);
 
@@ -94,9 +94,9 @@ program
   .requiredOption('-d, --description <desc>', 'Service description')
   .requiredOption('--category <cat>', 'Category (e.g. security, data, ai)')
   .requiredOption('-p, --price <sats>', 'Price in satoshis')
-  .requiredOption('-e, --endpoint <url>', 'Your service endpoint URL')
+  .option('-e, --endpoint <url>', 'Service endpoint URL (optional — jobs use the queue model)')
   .option('-c, --currency <cur>', 'Currency: BSV or MNEE', 'BSV')
-  .option('-m, --method <method>', 'HTTP method: POST or GET', 'POST')
+  .option('-m, --method <method>', 'HTTP method (optional)')
   .action(registerCommand);
 
 // ─── limits ───
