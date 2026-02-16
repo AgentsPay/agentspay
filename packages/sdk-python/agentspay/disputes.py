@@ -18,6 +18,7 @@ class DisputeOperations:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+            headers["x-api-key"] = self.api_key
         return headers
     
     def open_dispute(
@@ -109,14 +110,15 @@ class DisputeOperations:
         """
         try:
             response = requests.get(
-                f"{self.base_url}/api/payments/{payment_id}/disputes",
+                f"{self.base_url}/api/disputes",
                 headers=self._get_headers()
             )
             response.raise_for_status()
             data = response.json()
             
             disputes_data = data.get("disputes", [])
-            return [self._parse_dispute(d) for d in disputes_data]
+            filtered = [d for d in disputes_data if d.get("paymentId") == payment_id]
+            return [self._parse_dispute(d) for d in filtered]
         except requests.RequestException as e:
             raise DisputeError(f"Failed to get payment disputes: {str(e)}") from e
     
@@ -138,24 +140,10 @@ class DisputeOperations:
         Raises:
             DisputeError: If evidence submission fails
         """
-        payload = {"evidence": evidence}
-        
-        try:
-            response = requests.post(
-                f"{self.base_url}/api/disputes/{dispute_id}/evidence",
-                json=payload,
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            dispute_data = data.get("dispute")
-            if not dispute_data:
-                raise DisputeError("Invalid response: missing dispute data")
-            
-            return self._parse_dispute(dispute_data)
-        except requests.RequestException as e:
-            raise DisputeError(f"Failed to add evidence: {str(e)}") from e
+        raise DisputeError(
+            "Adding evidence after opening a dispute is not supported by this API version. "
+            "Pass evidence when calling open_dispute(...)."
+        )
     
     def _parse_dispute(self, data: dict) -> Dispute:
         """Parse dispute data from API response"""

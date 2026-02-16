@@ -65,7 +65,10 @@ class AgentPayClient:
     
     def create_wallet(self) -> AgentWallet:
         """Create a new agent wallet"""
-        return self._wallet.create_wallet()
+        wallet = self._wallet.create_wallet()
+        if wallet.api_key:
+            self._set_api_key(wallet.api_key)
+        return wallet
     
     def get_wallet(self, wallet_id: str) -> AgentWallet:
         """Get wallet by ID"""
@@ -231,6 +234,7 @@ class AgentPayClient:
             headers = {"Content-Type": "application/json"}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
+                headers["x-api-key"] = self.api_key
             
             response = requests.get(
                 f"{self.base_url}/api/agents/{agent_id}/reputation",
@@ -254,3 +258,12 @@ class AgentPayClient:
             )
         except requests.RequestException as e:
             raise AgentPayError(f"Failed to get reputation: {str(e)}") from e
+
+    def _set_api_key(self, api_key: str) -> None:
+        """Update API key across operation modules."""
+        self.api_key = api_key
+        self._wallet.api_key = api_key
+        self._services.api_key = api_key
+        self._payments.api_key = api_key
+        self._disputes.api_key = api_key
+        self._webhooks.api_key = api_key

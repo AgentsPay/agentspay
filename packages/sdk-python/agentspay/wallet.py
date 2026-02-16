@@ -3,7 +3,7 @@
 from typing import Optional
 import requests
 from .types import AgentWallet
-from .exceptions import WalletError, APIError
+from .exceptions import WalletError
 
 
 class WalletOperations:
@@ -18,6 +18,7 @@ class WalletOperations:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+            headers["x-api-key"] = self.api_key
         return headers
     
     def create_wallet(self) -> AgentWallet:
@@ -48,7 +49,9 @@ class WalletOperations:
                 address=wallet_data["address"],
                 created_at=wallet_data["createdAt"],
                 balance=wallet_data.get("balance"),
-                balance_mnee=wallet_data.get("balanceMnee")
+                balance_mnee=wallet_data.get("balanceMnee"),
+                api_key=data.get("apiKey"),
+                private_key=data.get("privateKey"),
             )
         except requests.RequestException as e:
             raise WalletError(f"Failed to create wallet: {str(e)}") from e

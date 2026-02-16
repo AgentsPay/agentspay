@@ -225,4 +225,7 @@ export class AgentPay {
   }
 }
 
+// Backward-compatible alias used in older docs/examples.
+export const AgentsPay = AgentPay
+
 export default AgentPay

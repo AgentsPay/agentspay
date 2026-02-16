@@ -1,15 +1,14 @@
 """AgentPay SDK Type Definitions"""
 
-from dataclasses import dataclass, field
-from typing import Optional, Literal, Dict, Any
-from datetime import datetime
+from dataclasses import dataclass
+from typing import Optional, Literal, Dict, Any, List
 
 
 Currency = Literal["BSV", "MNEE"]
 PaymentStatus = Literal["pending", "escrowed", "released", "disputed", "refunded"]
 DisputeStatus = Literal["open", "under_review", "resolved_refund", "resolved_release", "resolved_split", "expired"]
 DisputeResolution = Literal["refund", "release", "split"]
-ExecutionStatus = Literal["success", "error"]
+ExecutionStatus = Literal["pending", "success", "error"]
 HttpMethod = Literal["POST", "GET"]
 
 
@@ -22,6 +21,8 @@ class AgentWallet:
     created_at: str
     balance: Optional[int] = None  # satoshis (BSV)
     balance_mnee: Optional[int] = None  # cents (MNEE)
+    api_key: Optional[str] = None
+    private_key: Optional[str] = None
 
 
 @dataclass
@@ -132,7 +133,7 @@ class Webhook:
     """Webhook registration"""
     id: str
     url: str
-    events: list[str]
+    events: List[str]
     active: bool
     created_at: str
     secret: Optional[str] = None

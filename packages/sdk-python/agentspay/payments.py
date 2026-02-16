@@ -18,6 +18,7 @@ class PaymentOperations:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+            headers["x-api-key"] = self.api_key
         return headers
     
     def execute(
@@ -66,10 +67,10 @@ class PaymentOperations:
             
             return ExecutionResult(
                 payment_id=data["paymentId"],
-                service_id=data["serviceId"],
+                service_id=data.get("serviceId", service_id),
                 output=data.get("output", {}),
                 execution_time_ms=data.get("executionTimeMs", 0),
-                status=data.get("status", "success"),
+                status=data.get("status", "pending"),
                 receipt=receipt,
                 payment=payment
             )

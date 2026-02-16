@@ -18,6 +18,7 @@ class WebhookOperations:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+            headers["x-api-key"] = self.api_key
         return headers
     
     def register_webhook(
@@ -75,18 +76,13 @@ class WebhookOperations:
             WebhookError: If webhook not found or request fails
         """
         try:
-            response = requests.get(
-                f"{self.base_url}/api/webhooks/{webhook_id}",
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            webhook_data = data.get("webhook")
-            if not webhook_data:
-                raise WebhookError(f"Webhook {webhook_id} not found")
-            
-            return self._parse_webhook(webhook_data)
+            webhooks = self.list_webhooks()
+            for webhook in webhooks:
+                if webhook.id == webhook_id:
+                    return webhook
+            raise WebhookError(f"Webhook {webhook_id} not found")
+        except WebhookError:
+            raise
         except requests.RequestException as e:
             raise WebhookError(f"Failed to get webhook: {str(e)}") from e
     
@@ -167,7 +163,7 @@ class WebhookOperations:
             payload["active"] = active
         
         try:
-            response = requests.patch(
+            response = requests.put(
                 f"{self.base_url}/api/webhooks/{webhook_id}",
                 json=payload,
                 headers=self._get_headers()
